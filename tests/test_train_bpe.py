@@ -88,9 +88,20 @@ def test_train_bpe_special_tokens(snapshot):
     )
 
 
+def test_basic1():
+    input_path = FIXTURES_PATH / "basic1.txt"
+    vocab, merges = run_train_bpe(
+        input_path=input_path,
+        vocab_size=263,
+        special_tokens=["<|endoftext|>"],
+    )
+
+    assert len(vocab) == 263
+    assert merges == [(b's', b't'), (b'e', b'st'), (b'o', b'w'), (b'l', b'ow'), (b'w', b'est'), (b'n', b'e')]
+
+
 def test_foo():
-    # input_path = FIXTURES_PATH / "tinystories_sample.txt"
-    input_path = FIXTURES_PATH / "foo.txt"
+    input_path = FIXTURES_PATH / "address.txt"
     vocab, merges = run_train_bpe(
         input_path=input_path,
         vocab_size=263,
