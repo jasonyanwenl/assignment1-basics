@@ -122,7 +122,7 @@ class BPE:
 BYTE1: tuple[bytes] = tuple(bytes([b]) for b in range(256))
 
 @lru_cache(maxsize=8192)
-def _pretoken_to_bytes_tuple(pretoken) -> tuple[bytes]:
+def _pretoken_to_bytes_tuple(pretoken: str) -> tuple[bytes]:
     return tuple(BYTE1[i] for i in pretoken.encode("utf-8"))
 
 
@@ -147,16 +147,13 @@ class ChunkProcessor:
         # logger.debug(f"\n[{self.processor_id}] chunk:\n{self.chunk}\n===========================")
         docs = re.split("|".join([re.escape(t) for t in self.bpe_context.special_tokens]), self.chunk)
         docs = [d for d in docs if d.strip()]
+        counter: Counter[str, int] = Counter()
         for i, doc in enumerate(docs):
-            self._update_freq_table_with_doc(f"{self.processor_id}-{i}", doc)
-        return self.freq_table
+            # doc_id = f"{self.processor_id}-{i}"
+            counter.update(pretoken.group() for pretoken in re.finditer(self.bpe_context.PAT, doc))
 
-    def _update_freq_table_with_doc(self, doc_id, doc) -> dict[tuple[bytes], int]:
-        # logger.debug(f"[{doc_id}] doc: {doc}\n++++++++")
-        for pretoken in re.finditer(self.bpe_context.PAT, doc):
-            # logger.debug(f"[{doc_id}] pretoken: {pretoken}\n-----")
-            key = _pretoken_to_bytes_tuple(pretoken.group())
-            self.freq_table[key] += 1
-        # logger.debug(f"[{doc_id}] Freq table: \n{self.freq_table}")
+        for k, v in counter.items():
+            self.freq_table[_pretoken_to_bytes_tuple(k)] = v
+
         return self.freq_table
  
