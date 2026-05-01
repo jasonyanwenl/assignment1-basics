@@ -32,8 +32,6 @@ class BPE:
         self.context = BPEContext(input_path, vocab_size, special_tokens)
 
     def train(self) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-        # TODO: The following is a serial implementation, but you can parallelize this
-        # by sending each start/end pair to a set of processes.
         freq_tables: list[dict[tuple[bytes], int]] = []
 
         chunk_processor_inputs: list[tuple] = []
@@ -125,7 +123,6 @@ BYTE1: tuple[bytes] = tuple(bytes([b]) for b in range(256))
 
 @lru_cache(maxsize=8192)
 def _pretoken_to_bytes_tuple(pretoken) -> tuple[bytes]:
-    # pretoken_bytes = pretoken.encode("utf-8")
     return tuple(BYTE1[i] for i in pretoken.encode("utf-8"))
 
 
@@ -157,18 +154,9 @@ class ChunkProcessor:
     def _update_freq_table_with_doc(self, doc_id, doc) -> dict[tuple[bytes], int]:
         # logger.debug(f"[{doc_id}] doc: {doc}\n++++++++")
         for pretoken in re.finditer(self.bpe_context.PAT, doc):
-        # for pretoken in doc.split():
             # logger.debug(f"[{doc_id}] pretoken: {pretoken}\n-----")
-            # pretoken_bytes = pretoken.group().encode("utf-8")
-            # pretoken_bytes = pretoken.encode("utf-8")
-            # key = tuple(bytes([b]) for b in pretoken_bytes)
             key = _pretoken_to_bytes_tuple(pretoken.group())
             self.freq_table[key] += 1
         # logger.debug(f"[{doc_id}] Freq table: \n{self.freq_table}")
         return self.freq_table
-
-    # @lru_cache(maxsize=8912)
-    # def _pretoken_to_bytes_tuple(self, pretoken) -> tuple[bytes]:
-    #     # pretoken_bytes = pretoken.encode("utf-8")
-    #     return tuple(ChunkProcessor.BYTE1[i] for i in pretoken.encode("utf-8"))
  
