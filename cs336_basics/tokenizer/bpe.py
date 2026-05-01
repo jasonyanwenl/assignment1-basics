@@ -1,6 +1,8 @@
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from functools import lru_cache
 import logging
+from multiprocessing import Pool
 import os
 from pprint import pformat
 import regex as re
@@ -10,13 +12,13 @@ from cs336_basics.tokenizer.pretokenization import find_chunk_boundaries
 
 logger = logging.getLogger(__name__)
 
-class BpeContext:
-    def __init__(self, input_path: str | os.PathLike, vocab_size: int, special_tokens: list[str],) -> None:
-        self.input_path = input_path
-        self.vocab_size = vocab_size
-        self.special_tokens = special_tokens
-        self.num_processes = 4
-        self.PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+@dataclass
+class BPEContext:
+    input_path: str | os.PathLike
+    vocab_size: int
+    special_tokens: list[str]
+    num_processes: int = 16
+    PAT: str = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
 
 @dataclass
@@ -27,23 +29,28 @@ class BPFreqVal:
 
 class BPE:
     def __init__(self, input_path: str | os.PathLike, vocab_size: int, special_tokens: list[str],) -> None:
-        self.context = BpeContext(input_path, vocab_size, special_tokens)
+        self.context = BPEContext(input_path, vocab_size, special_tokens)
 
     def train(self) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
         # TODO: The following is a serial implementation, but you can parallelize this
         # by sending each start/end pair to a set of processes.
         freq_tables: list[dict[tuple[bytes], int]] = []
 
+        chunk_processor_inputs: list[tuple] = []
+
         with open(self.context.input_path, "rb") as f:
             boundaries = find_chunk_boundaries(f, self.context.num_processes, self.context.special_tokens[0].encode("utf-8"))
-
             for i, (start, end) in enumerate(zip(boundaries[:-1], boundaries[1:])):
-                f.seek(start)
-                chunk = f.read(end - start).decode("utf-8", errors="ignore")
-                chunk_processor = ChunkProcessor(self.context, i, chunk, start, end)
-                freq_tables.append(chunk_processor.process_chunk())
+                chunk_processor_inputs.append((self.context, i, start, end))
 
-        self.freq_table: dict[tuple[bytes], int] = dict[tuple[bytes], int](sum([Counter(t) for t in freq_tables], Counter()))
+        # for chunk_input in chunk_processor_inputs:
+        #     freq_tables.append(chunk_processor(*chunk_input))
+        with Pool(self.context.num_processes) as pool:
+            freq_tables = pool.starmap(chunk_processor, chunk_processor_inputs)
+        assert len(freq_tables) <= self.context.num_processes, \
+            f"Pretoken freq table list size: {len(freq_tables)} > num processes {self.context.num_processes}"
+
+        self.freq_table: Counter[tuple[bytes]] = sum(freq_tables, Counter())
 
         # logger.debug(f"Final pretoken freq table:\n{pformat(self.freq_table, width=160)}")
 
@@ -61,9 +68,14 @@ class BPE:
             self.vocab[len(self.vocab)] = b"".join(picked_bp)
             self.merges.append(picked_bp)
 
-            logger.info(f"Picked the {len(self.vocab)} byte-pair: {picked_bp}")
+            logger.info(f"Picked the {len(self.vocab)} byte-pair: {picked_bp} ({b''.join(picked_bp)}), freq: {self.bp_freq_table[picked_bp].freq}")
 
             self._update_bp_freq_table(picked_bp)
+
+            assert all(v.freq >= 0 for _, v in self.bp_freq_table.items()), "BP Frequency is negative"
+
+            if not any(v.freq != 0 for _, v in self.bp_freq_table.items()):
+                logger.warning(f"No more byte-pair found for the {len(self.vocab)} byte-pair!")
         
         logger.debug(f"Final vocab: {self.vocab}\nFinal merges: {self.merges}")
 
@@ -109,15 +121,32 @@ class BPE:
             # logger.debug(f"Byte-pair freq table (after merge):\n{pformat(self.bp_freq_table, width=160)}")
 
 
+BYTE1: tuple[bytes] = tuple(bytes([b]) for b in range(256))
+
+@lru_cache(maxsize=8192)
+def _pretoken_to_bytes_tuple(pretoken) -> tuple[bytes]:
+    # pretoken_bytes = pretoken.encode("utf-8")
+    return tuple(BYTE1[i] for i in pretoken.encode("utf-8"))
+
+
+def chunk_processor(*args, **kwargs) -> Counter[tuple[bytes]]:
+    chunk_processor = ChunkProcessor(*args, **kwargs)
+    return chunk_processor.process_chunk()
+
+
 class ChunkProcessor:
-    def __init__(self, bpe_context: BpeContext, processor_id: str, chunk: str, start: int, end: int, ) -> None:
+
+    def __init__(self, bpe_context: BPEContext, processor_id: str, start: int, end: int) -> None:
         self.bpe_context = bpe_context
         self.processor_id = processor_id
-        self.chunk = chunk
         self.start, self.end = start, end
-        self.freq_table: dict[tuple[bytes], int] = defaultdict[tuple[bytes], int](int)
+        self.freq_table: Counter[tuple[bytes], int] = Counter()
 
-    def process_chunk(self):
+        with open(self.bpe_context.input_path, "rb") as f:
+            f.seek(start)
+            self.chunk = f.read(end - start).decode("utf-8", errors="ignore")
+
+    def process_chunk(self) -> Counter[tuple[bytes], int]:
         # logger.debug(f"\n[{self.processor_id}] chunk:\n{self.chunk}\n===========================")
         docs = re.split("|".join([re.escape(t) for t in self.bpe_context.special_tokens]), self.chunk)
         docs = [d for d in docs if d.strip()]
@@ -130,10 +159,16 @@ class ChunkProcessor:
         for pretoken in re.finditer(self.bpe_context.PAT, doc):
         # for pretoken in doc.split():
             # logger.debug(f"[{doc_id}] pretoken: {pretoken}\n-----")
-            pretoken_bytes = pretoken.group().encode("utf-8")
+            # pretoken_bytes = pretoken.group().encode("utf-8")
             # pretoken_bytes = pretoken.encode("utf-8")
-            key = tuple[bytes](bytes([b]) for b in pretoken_bytes)
+            # key = tuple(bytes([b]) for b in pretoken_bytes)
+            key = _pretoken_to_bytes_tuple(pretoken.group())
             self.freq_table[key] += 1
         # logger.debug(f"[{doc_id}] Freq table: \n{self.freq_table}")
         return self.freq_table
+
+    # @lru_cache(maxsize=8912)
+    # def _pretoken_to_bytes_tuple(self, pretoken) -> tuple[bytes]:
+    #     # pretoken_bytes = pretoken.encode("utf-8")
+    #     return tuple(ChunkProcessor.BYTE1[i] for i in pretoken.encode("utf-8"))
  

@@ -101,9 +101,12 @@ def test_basic1():
 
 
 def test_foo():
-    input_path = FIXTURES_PATH / "address.txt"
+    # input_path = FIXTURES_PATH / "tinystories_sample.txt"
+    # input_path = FIXTURES_PATH / "tinystories_sample_5M.txt"
+    # input_path = FIXTURES_PATH / "../../data/TinyStoriesV2-GPT4-valid.txt"
+    input_path = FIXTURES_PATH / "../../data/TinyStoriesV2-GPT4-train.txt"
     vocab, merges = run_train_bpe(
         input_path=input_path,
-        vocab_size=263,
+        vocab_size=1000,
         special_tokens=["<|endoftext|>"],
     )
