@@ -1,6 +1,7 @@
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from functools import lru_cache
+import heapq
 import logging
 from multiprocessing import Pool
 import os
@@ -25,6 +26,19 @@ class BPEContext:
 class BPFreqVal:
     freq: int = 0
     in_pretoken_bytes: set[tuple[bytes]] = field(default_factory=set)
+
+
+@dataclass
+class HeapEntry:
+    freq: int
+    bp: tuple[bytes, ...]
+
+    def __lt__(self, other):
+        if not isinstance(other, HeapEntry):
+            return NotImplemented
+        if self.freq != other.freq:
+            return self.freq > other.freq
+        return self.bp > other.bp
 
 
 class BPE:
@@ -60,22 +74,37 @@ class BPE:
         self.vocab |= {(len(self.vocab) + idx): t.encode('utf-8') for idx, t in enumerate(self.context.special_tokens)}
         self.merges: list[tuple[bytes, bytes]] = []
 
+        heap: list[HeapEntry] = [HeapEntry(v.freq, k) for k, v in self.bp_freq_table.items()]
+        heapq.heapify(heap)
+
         while len(self.vocab) < self.context.vocab_size:
-            picked_bp: tuple[bytes] = max(self.bp_freq_table, key=lambda x: (self.bp_freq_table[x].freq, x))
+            picked_bp = None
+            while heap:
+                entry = heap[0]
+                if entry.freq == self.bp_freq_table[entry.bp].freq:
+                    picked_bp = entry.bp
+                    break
+                heapq.heappop(heap)
+
+            if __debug__:
+                picked_bp2: tuple[bytes] = max(self.bp_freq_table, key=lambda x: (self.bp_freq_table[x].freq, x))
+                assert picked_bp2 == picked_bp, f"picked_bp: {picked_bp} != picked_bp2: {picked_bp2}"
 
             self.vocab[len(self.vocab)] = b"".join(picked_bp)
             self.merges.append(picked_bp)
 
-            logger.info(f"Picked the {len(self.vocab)} byte-pair: {picked_bp} ({b''.join(picked_bp)}), freq: {self.bp_freq_table[picked_bp].freq}")
+            logger.info(f"Picked the {len(self.vocab)} byte-pair: {picked_bp} / {b''.join(picked_bp)}, freq: {self.bp_freq_table[picked_bp].freq}")
 
-            self._update_bp_freq_table(picked_bp)
+            self._update_bp_freq_table(picked_bp, heap)
 
             assert all(v.freq >= 0 for _, v in self.bp_freq_table.items()), "BP Frequency is negative"
 
-            if not any(v.freq != 0 for _, v in self.bp_freq_table.items()):
-                logger.warning(f"No more byte-pair found for the {len(self.vocab)} byte-pair!")
+            if __debug__:
+                if not any(v.freq != 0 for _, v in self.bp_freq_table.items()):
+                    logger.warning(f"No more byte-pair found for the {len(self.vocab)} byte-pair!")
         
-        logger.debug(f"Final vocab: {self.vocab}\nFinal merges: {self.merges}")
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Final vocab: {self.vocab}\nFinal merges: {self.merges}")
 
         return (self.vocab, self.merges)
     
@@ -87,14 +116,17 @@ class BPE:
                 bp_freq_table[(left, right)].in_pretoken_bytes.add(pretoken_bytes)
         return bp_freq_table
     
-    def _update_bp_freq_table(self, picked_bp: tuple[bytes]):
+    def _update_bp_freq_table(self, picked_bp: tuple[bytes], heap: list[tuple[int, tuple[bytes], BPFreqVal]]):
         in_pretoken_bytes: set[tuple[bytes]] = set(self.bp_freq_table[picked_bp].in_pretoken_bytes)
         for pretoken_bytes in in_pretoken_bytes:
             logger.debug(f"Merging the pretoken {pretoken_bytes} using {picked_bp}")
-            for left, right in zip(pretoken_bytes[:-1], pretoken_bytes[1:]):
-                # logger.debug(f"Removing the pretoken from {(left, right)}")
-                self.bp_freq_table[(left, right)].freq -= self.freq_table[pretoken_bytes]
-                self.bp_freq_table[(left, right)].in_pretoken_bytes.discard(pretoken_bytes)
+
+            for bp in zip(pretoken_bytes[:-1], pretoken_bytes[1:]):
+                # logger.debug(f"Removing the pretoken from {bp}")
+                entry = self.bp_freq_table[bp]
+                entry.freq -= self.freq_table[pretoken_bytes]
+                entry.in_pretoken_bytes.discard(pretoken_bytes)
+                heapq.heappush(heap, HeapEntry(entry.freq, bp))
 
             # logger.debug(f"Byte-pair freq table (during merge, removal):\n{pformat(self.bp_freq_table, width=160)}")
             pretoken_bytes_new_list: list[bytes] = []
@@ -113,9 +145,11 @@ class BPE:
             assert len(pretoken_bytes) - len(pretoken_bytes_new) >= 1
 
             self.freq_table[pretoken_bytes_new] = self.freq_table.pop(pretoken_bytes)
-            for left, right in zip(pretoken_bytes_new[:-1], pretoken_bytes_new[1:]):
-                self.bp_freq_table[(left, right)].freq += self.freq_table[pretoken_bytes_new]
-                self.bp_freq_table[(left, right)].in_pretoken_bytes.add(pretoken_bytes_new)
+            for bp in zip(pretoken_bytes_new[:-1], pretoken_bytes_new[1:]):
+                entry = self.bp_freq_table[bp]
+                entry.freq += self.freq_table[pretoken_bytes_new]
+                entry.in_pretoken_bytes.add(pretoken_bytes_new)
+                heapq.heappush(heap, HeapEntry(entry.freq, bp))
             # logger.debug(f"Byte-pair freq table (after merge):\n{pformat(self.bp_freq_table, width=160)}")
 
 

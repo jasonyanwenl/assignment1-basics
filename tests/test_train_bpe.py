@@ -107,6 +107,14 @@ def test_foo():
     input_path = FIXTURES_PATH / "../../data/TinyStoriesV2-GPT4-train.txt"
     vocab, merges = run_train_bpe(
         input_path=input_path,
-        vocab_size=1000,
+        vocab_size=10000,
         special_tokens=["<|endoftext|>"],
     )
+
+    # with open("test_vocab.json", "w", encoding="utf-8") as f:
+    #     json.dump(vocab, f, indent=2, ensure_ascii=False)
+
+    # gpt2_byte_encoder = gpt2_bytes_to_unicode()
+    # with open("test_merges.txt", "w", encoding="utf-8") as f:
+    #     for t1, t2 in merges:
+    #         f.write(f"{gpt2_byte_encoder[t1]} {gpt2_byte_encoder[t2]}")
