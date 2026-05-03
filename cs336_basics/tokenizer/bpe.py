@@ -5,6 +5,7 @@ import heapq
 import logging
 from multiprocessing import Pool
 import os
+import pickle
 from pprint import pformat
 import regex as re
 
@@ -46,6 +47,7 @@ class BPE:
         self.context = BPEContext(input_path, vocab_size, special_tokens)
 
     def train(self) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+        logger.info(f"BPE training started for {self.context.input_path}")
         freq_tables: list[dict[tuple[bytes], int]] = []
 
         chunk_processor_inputs: list[tuple] = []
@@ -57,34 +59,56 @@ class BPE:
 
         # for chunk_input in chunk_processor_inputs:
         #     freq_tables.append(chunk_processor(*chunk_input))
+        logger.info(f"BPE chunking started with {self.context.num_processes}")
         with Pool(self.context.num_processes) as pool:
             freq_tables = pool.starmap(chunk_processor, chunk_processor_inputs)
         assert len(freq_tables) <= self.context.num_processes, \
             f"Pretoken freq table list size: {len(freq_tables)} > num processes {self.context.num_processes}"
 
+        logger.info(f"Aggregating {len(freq_tables)} freq tables")
         self.freq_table: Counter[tuple[bytes]] = sum(freq_tables, Counter())
+        logger.info(f"Aggregated {len(freq_tables)} freq tables, #keys: {len(self.freq_table)}")
 
         # logger.debug(f"Final pretoken freq table:\n{pformat(self.freq_table, width=160)}")
 
         self.bp_freq_table: dict[tuple[bytes], BPFreqVal] = self._build_bp_freq_table()
+        logger.info(f"Built byte-pair freq tables, #keys: {len(self.bp_freq_table)}")
 
         # logger.debug(f"Byte-pair freq table:\n{pformat(self.bp_freq_table, width=160)}")
+
+        heap: list[HeapEntry] = [HeapEntry(v.freq, k) for k, v in self.bp_freq_table.items()]
+        heapq.heapify(heap)
+        logger.info(f"Heapified byte-pair freq tables")
+
+        internal_state_file = "internal_state.pickle"
+        payload = {
+            "freq_table": self.freq_table,
+            "bp_freq_table": self.bp_freq_table,
+            "heap": heap
+        }
+        with open(internal_state_file, "wb") as f:
+            pickle.dump(payload, f)
+        # with open(internal_state_file, "rb") as f:
+        #     payload = pickle.load(f)
+        # self.freq_table = payload["freq_table"]
+        # self.bp_freq_table = payload["bp_freq_table"]
+        # heap = payload["heap"]
 
         self.vocab: dict[int, bytes] = {i: bytes([i]) for i in range(256)}
         self.vocab |= {(len(self.vocab) + idx): t.encode('utf-8') for idx, t in enumerate(self.context.special_tokens)}
         self.merges: list[tuple[bytes, bytes]] = []
 
-        heap: list[HeapEntry] = [HeapEntry(v.freq, k) for k, v in self.bp_freq_table.items()]
-        heapq.heapify(heap)
-
         while len(self.vocab) < self.context.vocab_size:
+            logger.info(f"Picking the {len(self.vocab)} / {self.context.vocab_size} byte-pair...")
             picked_bp = None
             while heap:
                 entry = heap[0]
                 if entry.freq == self.bp_freq_table[entry.bp].freq:
                     picked_bp = entry.bp
                     break
-                heapq.heappop(heap)
+                popped = heapq.heappop(heap)
+                if len(heap) % 1000 == 0:
+                    logger.info(f"Popped {popped} (head size = {len(heap)})")
 
             if __debug__:
                 picked_bp2: tuple[bytes] = max(self.bp_freq_table, key=lambda x: (self.bp_freq_table[x].freq, x))
@@ -93,7 +117,9 @@ class BPE:
             self.vocab[len(self.vocab)] = b"".join(picked_bp)
             self.merges.append(picked_bp)
 
-            logger.info(f"Picked the {len(self.vocab)} byte-pair: {picked_bp} / {b''.join(picked_bp)}, freq: {self.bp_freq_table[picked_bp].freq}")
+            logger.info(f"Picked the {len(self.vocab)} / {self.context.vocab_size} byte-pair: {picked_bp} / {b''.join(picked_bp)}, "
+            f"freq: {self.bp_freq_table[picked_bp].freq}"
+            f"#in_pretokens: {len(self.bp_freq_table[picked_bp].in_pretoken_bytes)}")
 
             self._update_bp_freq_table(picked_bp, heap)
 
@@ -117,16 +143,20 @@ class BPE:
         return bp_freq_table
     
     def _update_bp_freq_table(self, picked_bp: tuple[bytes], heap: list[tuple[int, tuple[bytes], BPFreqVal]]):
+        logger.info(f"Merging {len(self.bp_freq_table[picked_bp].in_pretoken_bytes)} pretokens using {picked_bp}")
         in_pretoken_bytes: set[tuple[bytes]] = set(self.bp_freq_table[picked_bp].in_pretoken_bytes)
-        for pretoken_bytes in in_pretoken_bytes:
-            logger.debug(f"Merging the pretoken {pretoken_bytes} using {picked_bp}")
+        for pretoken_idx, pretoken_bytes in enumerate(in_pretoken_bytes):
+            if pretoken_idx % 1000 == 0:
+                logger.info(f"Merging the {pretoken_idx} / {len(in_pretoken_bytes)} pretoken {pretoken_bytes} using {picked_bp}")
 
             for bp in zip(pretoken_bytes[:-1], pretoken_bytes[1:]):
                 # logger.debug(f"Removing the pretoken from {bp}")
                 entry = self.bp_freq_table[bp]
                 entry.freq -= self.freq_table[pretoken_bytes]
                 entry.in_pretoken_bytes.discard(pretoken_bytes)
+                # logger.info(f"[old] heappushing entry {(entry.freq, bp)}")
                 heapq.heappush(heap, HeapEntry(entry.freq, bp))
+                # logger.info(f"[old] heappushed entry {(entry.freq, bp)}")
 
             # logger.debug(f"Byte-pair freq table (during merge, removal):\n{pformat(self.bp_freq_table, width=160)}")
             pretoken_bytes_new_list: list[bytes] = []
@@ -149,7 +179,9 @@ class BPE:
                 entry = self.bp_freq_table[bp]
                 entry.freq += self.freq_table[pretoken_bytes_new]
                 entry.in_pretoken_bytes.add(pretoken_bytes_new)
+                # logger.info(f"[new] heappushing entry {(entry.freq, bp)}")
                 heapq.heappush(heap, HeapEntry(entry.freq, bp))
+                # logger.info(f"[new] heappushed entry {(entry.freq, bp)}")
             # logger.debug(f"Byte-pair freq table (after merge):\n{pformat(self.bp_freq_table, width=160)}")
 
 
@@ -173,21 +205,30 @@ class ChunkProcessor:
         self.start, self.end = start, end
         self.freq_table: Counter[tuple[bytes], int] = Counter()
 
+        logger.info(f"[{self.processor_id}] Fetching chunk using start/end: {start} / {end}")
         with open(self.bpe_context.input_path, "rb") as f:
             f.seek(start)
             self.chunk = f.read(end - start).decode("utf-8", errors="ignore")
+        logger.info(f"[{self.processor_id}] Fetched chunk using start/end: {start} / {end}")
 
     def process_chunk(self) -> Counter[tuple[bytes], int]:
-        # logger.debug(f"\n[{self.processor_id}] chunk:\n{self.chunk}\n===========================")
+        logger.info(f"[{self.processor_id}] Splitting chunk to docs")
         docs = re.split("|".join([re.escape(t) for t in self.bpe_context.special_tokens]), self.chunk)
-        docs = [d for d in docs if d.strip()]
+        logger.info(f"[{self.processor_id}] Split chunk to #docs:{len(docs)}")
+
         counter: Counter[str, int] = Counter()
         for i, doc in enumerate(docs):
-            # doc_id = f"{self.processor_id}-{i}"
+            if not doc.strip():
+                continue
+            if i % 10000 == 0:
+                logger.info(f"[{self.processor_id}] Processing doc id: {i} / {len(docs)}")
             counter.update(pretoken.group() for pretoken in re.finditer(self.bpe_context.PAT, doc))
 
+        logger.info(f"[{self.processor_id}] Converting freq table key to bytes")
         for k, v in counter.items():
             self.freq_table[_pretoken_to_bytes_tuple(k)] = v
+
+        logger.info(f"[{self.processor_id}] Finished building the freq table, size: {len(self.freq_table)}")
 
         return self.freq_table
  
