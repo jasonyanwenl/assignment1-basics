@@ -80,14 +80,14 @@ class BPE:
         heapq.heapify(heap)
         logger.info(f"Heapified byte-pair freq tables")
 
-        internal_state_file = "internal_state.pickle"
-        payload = {
-            "freq_table": self.freq_table,
-            "bp_freq_table": self.bp_freq_table,
-            "heap": heap
-        }
-        with open(internal_state_file, "wb") as f:
-            pickle.dump(payload, f)
+        # internal_state_file = "internal_state_owt.pickle"
+        # payload = {
+        #     "freq_table": self.freq_table,
+        #     "bp_freq_table": self.bp_freq_table,
+        #     "heap": heap
+        # }
+        # with open(internal_state_file, "wb") as f:
+        #     pickle.dump(payload, f)
         # with open(internal_state_file, "rb") as f:
         #     payload = pickle.load(f)
         # self.freq_table = payload["freq_table"]
@@ -106,9 +106,7 @@ class BPE:
                 if entry.freq == self.bp_freq_table[entry.bp].freq:
                     picked_bp = entry.bp
                     break
-                popped = heapq.heappop(heap)
-                if len(heap) % 1000 == 0:
-                    logger.info(f"Popped {popped} (head size = {len(heap)})")
+                heapq.heappop(heap)
 
             if __debug__:
                 picked_bp2: tuple[bytes] = max(self.bp_freq_table, key=lambda x: (self.bp_freq_table[x].freq, x))
@@ -118,7 +116,7 @@ class BPE:
             self.merges.append(picked_bp)
 
             logger.info(f"Picked the {len(self.vocab)} / {self.context.vocab_size} byte-pair: {picked_bp} / {b''.join(picked_bp)}, "
-            f"freq: {self.bp_freq_table[picked_bp].freq}"
+            f"freq: {self.bp_freq_table[picked_bp].freq} "
             f"#in_pretokens: {len(self.bp_freq_table[picked_bp].in_pretoken_bytes)}")
 
             self._update_bp_freq_table(picked_bp, heap)
@@ -145,8 +143,9 @@ class BPE:
     def _update_bp_freq_table(self, picked_bp: tuple[bytes], heap: list[tuple[int, tuple[bytes], BPFreqVal]]):
         logger.info(f"Merging {len(self.bp_freq_table[picked_bp].in_pretoken_bytes)} pretokens using {picked_bp}")
         in_pretoken_bytes: set[tuple[bytes]] = set(self.bp_freq_table[picked_bp].in_pretoken_bytes)
+        bp_freq_delta: dict[tuple[bytes], int] = defaultdict(int)
         for pretoken_idx, pretoken_bytes in enumerate(in_pretoken_bytes):
-            if pretoken_idx % 1000 == 0:
+            if pretoken_idx % 100000 == 0:
                 logger.info(f"Merging the {pretoken_idx} / {len(in_pretoken_bytes)} pretoken {pretoken_bytes} using {picked_bp}")
 
             for bp in zip(pretoken_bytes[:-1], pretoken_bytes[1:]):
@@ -154,9 +153,7 @@ class BPE:
                 entry = self.bp_freq_table[bp]
                 entry.freq -= self.freq_table[pretoken_bytes]
                 entry.in_pretoken_bytes.discard(pretoken_bytes)
-                # logger.info(f"[old] heappushing entry {(entry.freq, bp)}")
-                heapq.heappush(heap, HeapEntry(entry.freq, bp))
-                # logger.info(f"[old] heappushed entry {(entry.freq, bp)}")
+                bp_freq_delta[bp] -= self.freq_table[pretoken_bytes]
 
             # logger.debug(f"Byte-pair freq table (during merge, removal):\n{pformat(self.bp_freq_table, width=160)}")
             pretoken_bytes_new_list: list[bytes] = []
@@ -179,10 +176,15 @@ class BPE:
                 entry = self.bp_freq_table[bp]
                 entry.freq += self.freq_table[pretoken_bytes_new]
                 entry.in_pretoken_bytes.add(pretoken_bytes_new)
-                # logger.info(f"[new] heappushing entry {(entry.freq, bp)}")
-                heapq.heappush(heap, HeapEntry(entry.freq, bp))
-                # logger.info(f"[new] heappushed entry {(entry.freq, bp)}")
-            # logger.debug(f"Byte-pair freq table (after merge):\n{pformat(self.bp_freq_table, width=160)}")
+                bp_freq_delta[bp] += self.freq_table[pretoken_bytes_new]
+
+        logger.info(f"Heappushing {len(bp_freq_delta)} delta entries")
+        for bp, delta in bp_freq_delta.items():
+            if delta == 0:
+                continue
+            heapq.heappush(heap, HeapEntry(self.bp_freq_table[bp].freq, bp))
+        logger.info(f"Heappushed {len(bp_freq_delta)} delta entries")
+        # logger.debug(f"Byte-pair freq table (after merge):\n{pformat(self.bp_freq_table, width=160)}")
 
 
 BYTE1: tuple[bytes] = tuple(bytes([b]) for b in range(256))
