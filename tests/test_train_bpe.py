@@ -112,13 +112,13 @@ def test_foo():
         special_tokens=["<|endoftext|>"],
     )
 
-    def to_unicode(b: bytes) -> str:
-        return "".join([gpt2_byte_encoder[i] for i in b])
+    # def to_unicode(b: bytes) -> str:
+    #     return "".join([gpt2_byte_encoder[i] for i in b])
 
-    gpt2_byte_encoder = gpt2_bytes_to_unicode()
-    with open("test_vocab.json", "w", encoding="utf-8") as f:
-        json.dump({k: to_unicode(v) for k,v in vocab.items()},
-            f, indent=2, ensure_ascii=False)
-    with open("test_merges.txt", "w", encoding="utf-8") as f:
-        for t1, t2 in merges:
-            f.write(f"{to_unicode(t1)} {to_unicode(t2)}\n")
+    # gpt2_byte_encoder = gpt2_bytes_to_unicode()
+    # with open("test_vocab.json", "w", encoding="utf-8") as f:
+    #     json.dump({k: to_unicode(v) for k,v in vocab.items()},
+    #         f, indent=2, ensure_ascii=False)
+    # with open("test_merges.txt", "w", encoding="utf-8") as f:
+    #     for t1, t2 in merges:
+    #         f.write(f"{to_unicode(t1)} {to_unicode(t2)}\n")
