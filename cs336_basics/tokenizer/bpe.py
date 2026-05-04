@@ -66,7 +66,9 @@ class BPE:
             f"Pretoken freq table list size: {len(freq_tables)} > num processes {self.context.num_processes}"
 
         logger.info(f"Aggregating {len(freq_tables)} freq tables")
-        self.freq_table: Counter[tuple[bytes]] = sum(freq_tables, Counter())
+        self.freq_table: Counter[tuple[bytes]] = Counter()
+        for ft in freq_tables:
+            self.freq_table.update(ft)
         logger.info(f"Aggregated {len(freq_tables)} freq tables, #keys: {len(self.freq_table)}")
 
         # logger.debug(f"Final pretoken freq table:\n{pformat(self.freq_table, width=160)}")
@@ -115,9 +117,10 @@ class BPE:
             self.vocab[len(self.vocab)] = b"".join(picked_bp)
             self.merges.append(picked_bp)
 
-            logger.info(f"Picked the {len(self.vocab)} / {self.context.vocab_size} byte-pair: {picked_bp} / {b''.join(picked_bp)}, "
-            f"freq: {self.bp_freq_table[picked_bp].freq} "
-            f"#in_pretokens: {len(self.bp_freq_table[picked_bp].in_pretoken_bytes)}")
+            if len(self.vocab) % 1000 == 0:
+                logger.info(f"Picked the {len(self.vocab)} / {self.context.vocab_size} byte-pair: {picked_bp} / {b''.join(picked_bp)}, "
+                f"freq: {self.bp_freq_table[picked_bp].freq} "
+                f"#in_pretokens: {len(self.bp_freq_table[picked_bp].in_pretoken_bytes)}")
 
             self._update_bp_freq_table(picked_bp, heap)
 
@@ -214,16 +217,12 @@ class ChunkProcessor:
         logger.info(f"[{self.processor_id}] Fetched chunk using start/end: {start} / {end}")
 
     def process_chunk(self) -> Counter[tuple[bytes], int]:
-        logger.info(f"[{self.processor_id}] Splitting chunk to docs")
-        docs = re.split("|".join([re.escape(t) for t in self.bpe_context.special_tokens]), self.chunk)
-        logger.info(f"[{self.processor_id}] Split chunk to #docs:{len(docs)}")
-
         counter: Counter[str, int] = Counter()
-        for i, doc in enumerate(docs):
+        for i, doc in enumerate(re.splititer("|".join([re.escape(t) for t in self.bpe_context.special_tokens]), self.chunk)):
             if not doc.strip():
                 continue
             if i % 10000 == 0:
-                logger.info(f"[{self.processor_id}] Processing doc id: {i} / {len(docs)}")
+                logger.info(f"[{self.processor_id}] Processing doc id: {i}")
             counter.update(pretoken.group() for pretoken in re.finditer(self.bpe_context.PAT, doc))
 
         logger.info(f"[{self.processor_id}] Converting freq table key to bytes")
