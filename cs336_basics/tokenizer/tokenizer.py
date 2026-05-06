@@ -46,11 +46,26 @@ class Tokenizer:
                 next_id += 1
             logger.info("special token: %s, id: %s", special_token, self.vocab2id[special_token_bytes])
 
+    @classmethod
     def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens: list[str] | None = None):
-        raise NotImplementedError
+        gpt2_byte_decoder = {v: k for k, v in gpt2_bytes_to_unicode().items()}
+        with open(vocab_filepath, encoding="utf-8") as f:
+            vocab = {
+                int(gpt2_vocab_index): bytes([gpt2_byte_decoder[token] for token in gpt2_vocab_item])
+                for gpt2_vocab_index, gpt2_vocab_item in json.load(f).items()
+            }
+        with open(merges_filepath, encoding="utf-8") as f:
+            merges = [
+                (
+                    bytes([gpt2_byte_decoder[token] for token in merge_token_1]),
+                    bytes([gpt2_byte_decoder[token] for token in merge_token_2]),
+                )
+                for merge_token_1, merge_token_2 in [tuple(line.rstrip().split(" ")) for line in f]
+            ]
+        return Tokenizer(vocab=vocab, merges=merges, special_tokens=special_tokens)
 
     def encode(self, text: str) -> list[int]:
-        logger.info("input text: %s", text)
+        logger.debug("input text: %s", text)
         encoded = []
         text_iterator = (
             re.splititer(self.split_delimiter, text) 
@@ -63,7 +78,7 @@ class Tokenizer:
                 continue
             for pretoken in re.finditer(self.PAT, doc):
                 encoded.extend(self._encode_pretoken(pretoken.group()))
-        logger.info("encoded: %s", encoded)
+        logger.debug("encoded: %s", encoded)
         return encoded
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
@@ -72,22 +87,22 @@ class Tokenizer:
 
     def decode(self, ids: list[int]) -> str:
         decoded: bytes = b"".join(self.vocab[id] for id in ids)
-        logger.info("decoded: %s", decoded)
+        logger.debug("decoded: %s", decoded)
         return decoded.decode('utf-8', errors='replace')
 
     def _encode_pretoken(self, pretoken: str) -> list[int]:
-        logger.info("input pretoken: %s", pretoken)
+        logger.debug("input pretoken: %s", pretoken)
         pretoken_bytes = _pretoken_to_bytes_tuple(pretoken)
-        logger.info("pretoken_bytes: %s", pretoken_bytes)
+        logger.debug("pretoken_bytes: %s", pretoken_bytes)
         while len(pretoken_bytes) > 1:
-            logger.info("len(pretoken_bytes): %s, pretoken_bytes: %s", len(pretoken_bytes), pretoken_bytes)
+            logger.debug("len(pretoken_bytes): %s, pretoken_bytes: %s", len(pretoken_bytes), pretoken_bytes)
             curr_rank = len(self.merges)
             picked_bp = None
             for bp in zip(pretoken_bytes[:-1], pretoken_bytes[1:]):
                 if bp in self.merge2rank and self.merge2rank[bp] < curr_rank:
                     curr_rank = self.merge2rank[bp]
                     picked_bp = bp
-            logger.info("picked_bp: %s", picked_bp)
+            logger.debug("picked_bp: %s", picked_bp)
             if not picked_bp:
                 break
             
@@ -101,11 +116,11 @@ class Tokenizer:
                     pretoken_bytes_new_list.append(pretoken_bytes[i])
                     i += 1
             pretoken_bytes: tuple[bytes, ...] = tuple(pretoken_bytes_new_list)
-        logger.info("merged pretoken_bytes: %s", pretoken_bytes)
+        logger.debug("merged pretoken_bytes: %s", pretoken_bytes)
         encoded = []
         for curr_vocab in pretoken_bytes:
             encoded.append(self.vocab2id[curr_vocab])
-            logger.info("curr_vocab: %s, id: %s", curr_vocab, encoded[-1])
+            logger.debug("curr_vocab: %s, id: %s", curr_vocab, encoded[-1])
         return encoded
 
 
