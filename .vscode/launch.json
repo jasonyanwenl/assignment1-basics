@@ -14,14 +14,14 @@
             "justMyCode": true
         },
         {
-            "name": "Debug test_train_bpe_speed",
+            "name": "Debug",
             "type": "python",
             "request": "launch",
             "module": "pytest",
             "args": [
-                "tests/test_train_bpe.py::test_train_bpe_speed",
+                "tests/test_tokenizer.py::test_ascii_string_matches_tiktoken",
                 "-s",
-                "--log-cli-level=DEBUG"
+                "--log-cli-level=INFO"
             ],
             "justMyCode": false,
             "console": "integratedTerminal",
