@@ -14,10 +14,20 @@ if __name__ == '__main__':
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(funcName)s:%(lineno)d %(message)s"
     )
-    input_file = "data/TinyStoriesV2-GPT4-train.txt"
+    input_file = "data/TinyStoriesV2-GPT4-valid.txt"
+    # input_file = "data/TinyStoriesV2-GPT4-train.txt"
     # input_file = "data/owt_train.txt"
     special_tokens=["<|endoftext|>"]
     sampled_boundaries = []
+
+    tokenizer = Tokenizer.from_files(
+        vocab_filepath="vocab_tinystories.json",
+        merges_filepath="merges_tinystories.txt",
+        # vocab_filepath="vocab_owt.json",
+        # merges_filepath="merges_owt.txt",
+        special_tokens=special_tokens
+    )
+
     with open(input_file, "rb") as f:
         boundaries = find_chunk_boundaries(f, 10000, special_tokens[0].encode("utf-8"))
         for i, (start, end) in enumerate(zip(boundaries[:-1], boundaries[1:])):
@@ -27,14 +37,6 @@ if __name__ == '__main__':
                 break
     
     logger.info("Sampled boundaries: %s", sampled_boundaries)
-
-    tokenizer = Tokenizer.from_files(
-        vocab_filepath="vocab_tinystories.json",
-        merges_filepath="merges_tinystories.txt",
-        # vocab_filepath="vocab_owt.json",
-        # merges_filepath="merges_owt.txt",
-        special_tokens=special_tokens
-    )
 
     doc_id = 0
     throughputs = []

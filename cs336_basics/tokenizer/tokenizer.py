@@ -3,8 +3,10 @@ from functools import lru_cache
 import json
 import logging
 import os
+import numpy as np
 import regex as re
 from tests.common import gpt2_bytes_to_unicode
+from tqdm import tqdm
 from typing import Iterable, Iterator
 
 
@@ -39,8 +41,8 @@ class Tokenizer:
         logger.info("next id: %s", next_id)
 
         for special_token in self.special_tokens:
-            if special_token not in self.vocab2id:
-                special_token_bytes = special_token.encode('utf-8')
+            special_token_bytes = special_token.encode('utf-8')
+            if special_token_bytes not in self.vocab2id:
                 self.vocab[next_id] = special_token_bytes
                 self.vocab2id[special_token_bytes] = next_id
                 next_id += 1
@@ -127,49 +129,42 @@ class Tokenizer:
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
 
-    def get_tokenizer_from_vocab_merges_path(
-        vocab_path: str | os.PathLike,
-        merges_path: str | os.PathLike,
-        special_tokens: list[str] | None = None,
-    ):
-        gpt2_byte_decoder = {v: k for k, v in gpt2_bytes_to_unicode().items()}
-        with open(vocab_path) as vocab_f:
-            gpt2_vocab = json.load(vocab_f)
-        gpt2_bpe_merges = []
-        with open(merges_path) as f:
-            for line in f:
-                cleaned_line = line.rstrip()
-                if cleaned_line and len(cleaned_line.split(" ")) == 2:
-                    gpt2_bpe_merges.append(tuple(cleaned_line.split(" ")))
-        # The GPT-2 tokenizer uses a remapped unicode encoding for bytes. Let's
-        # just return the original bytes, so we don't force students to use
-        # any particular encoding scheme.
-        vocab = {
-            gpt2_vocab_index: bytes([gpt2_byte_decoder[token] for token in gpt2_vocab_item])
-            for gpt2_vocab_item, gpt2_vocab_index in gpt2_vocab.items()
-        }
-        # If any of the special tokens don't exist in the vocab, append them to the vocab.
-        if special_tokens:
-            for special_token in special_tokens:
-                byte_encoded_special_token = special_token.encode("utf-8")
-                if byte_encoded_special_token not in set(vocab.values()):
-                    vocab[len(vocab)] = byte_encoded_special_token
+    # vocab_filepath="vocab_tinystories.json"
+    # merges_filepath="merges_tinystories.txt"
 
-        merges = [
-            (
-                bytes([gpt2_byte_decoder[token] for token in merge_token_1]),
-                bytes([gpt2_byte_decoder[token] for token in merge_token_2]),
-            )
-            for merge_token_1, merge_token_2 in gpt2_bpe_merges
-        ]
-        return Tokenizer(vocab, merges, special_tokens)
+    # input_file = "data/TinyStoriesV2-GPT4-valid.txt"
+    # out_path = "tokens_tinystories_valid.npy"
+    # input_file = "data/TinyStoriesV2-GPT4-train.txt"
+    # out_path = "tokens_tinystories_train.npy"
 
-    tokenizer = get_tokenizer_from_vocab_merges_path(
-        vocab_path= "tests/fixtures/gpt2_vocab.json",
-        merges_path= "tests/fixtures/gpt2_merges.txt"
+    vocab_filepath="vocab_owt.json"
+    merges_filepath="merges_owt.txt"
+
+    # input_file = "data/owt_valid.txt"
+    # out_path = "tokens_owt_valid.npy"
+
+    input_file = "data/owt_train.txt"
+    out_path = "tokens_owt_train.npy"
+
+    special_tokens=["<|endoftext|>"]
+
+    logger.info("Input:\n%s\n%s\n%s", vocab_filepath, merges_filepath, input_file)
+
+    tokenizer = Tokenizer.from_files(
+        vocab_filepath=vocab_filepath,
+        merges_filepath=merges_filepath,
+        special_tokens=special_tokens
     )
-    test_string = "Hello, how are you?"
-    encoded_ids = tokenizer.encode(test_string)
-    logger.info("encoded_ids: %s", encoded_ids)
-    decoded_string = tokenizer.decode(encoded_ids)
-    logger.info("decoded_string: %s", decoded_string)
+
+    total_bytes = os.path.getsize(input_file)
+    with open(input_file, "r", encoding="utf-8") as f, tqdm(total=total_bytes, unit="B", unit_scale=True, desc="Reading") as pbar:
+        def gen():
+            for line in f:
+                pbar.update(len(line.encode("utf-8")))
+                yield from tokenizer.encode(line)
+        ids = np.fromiter(gen(), dtype=np.uint16)
+
+    # with open(input_file) as f:
+    #     ids = np.fromiter(tokenizer.encode_iterable(f), dtype=np.uint16)
+    np.save(out_path, ids)
+    logger.info("Saved to output: %s", out_path)
