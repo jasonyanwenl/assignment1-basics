@@ -1,3 +1,4 @@
+from jaxtyping import Float, Int
 from torch import nn
 import torch
 
@@ -12,7 +13,7 @@ class RoPE(nn.Module):
         self.register_buffer("cos", angles.cos().to(device), persistent=False)
         self.register_buffer("sin", angles.sin().to(device), persistent=False)
 
-    def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Float[torch.Tensor, "... seq_len d_k"], token_positions: Int[torch.Tensor, "... seq_len"]) -> torch.Tensor:
         cos = self.cos[token_positions]
         sin = self.sin[token_positions]
         x_even = x[..., 0::2]
