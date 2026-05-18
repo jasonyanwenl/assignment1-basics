@@ -10,7 +10,7 @@
             "request": "launch",
             "module": "pytest",
             "args": [
-                "tests/test_model.py::test_scaled_dot_product_attention",
+                "tests/test_model.py::test_multihead_self_attention",
                 "-s",
                 "--log-cli-level=INFO"
             ],
