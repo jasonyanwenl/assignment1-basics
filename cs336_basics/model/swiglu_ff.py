@@ -1,3 +1,4 @@
+from jaxtyping import Float
 import torch
 import torch.nn as nn
 
@@ -12,7 +13,7 @@ class SwiGLU(nn.Module):
         self.w2 = Linear(d_ff_rounded, d_model, dtype=dtype, device=device)
         self.w3 = Linear(d_model, d_ff_rounded, dtype=dtype, device=device)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Float[torch.Tensor, "... seq d_model"]) -> Float[torch.Tensor, "... seq d_model"]:
         return self.w2((self._silu(self.w1(x)) * (self.w3(x))))
 
     def _silu(self, x: torch.Tensor) -> torch.Tensor:

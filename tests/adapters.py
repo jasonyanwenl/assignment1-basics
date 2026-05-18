@@ -16,6 +16,7 @@ from cs336_basics.model.multihead_self_attention import MultiHeadSelfAttention
 from cs336_basics.model.rmsnorm import RMSNorm
 from cs336_basics.model.rope import RoPE
 from cs336_basics.model.swiglu_ff import SwiGLU
+from cs336_basics.model.transformer_block import TransformerBlock
 from cs336_basics.tokenizer.bpe import BPE
 from cs336_basics.tokenizer.tokenizer import Tokenizer
 
@@ -40,7 +41,7 @@ def run_linear(
     """
 
     model = Linear(d_in, d_out)
-    model.load_state_dict({"weights": weights})
+    model.load_state_dict({"weight": weights})
     return model(in_features)
 
 
@@ -308,7 +309,9 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    transformer_block = TransformerBlock(d_model, num_heads, d_ff, max_seq_len, theta)
+    transformer_block.load_state_dict(weights)
+    return transformer_block(in_features)
 
 
 def run_transformer_lm(
@@ -414,7 +417,7 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     model = RMSNorm(d_model, eps)
-    model.load_state_dict({"g": weights})
+    model.load_state_dict({"weight": weights})
     return model(in_features)
 
 
