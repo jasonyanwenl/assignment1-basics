@@ -13,8 +13,6 @@ class MultiHeadSelfAttention(nn.Module):
         self,
         d_model: int,
         num_heads: int,
-        theta: float | None=None,
-        max_seq_len: int | None=None,
         device=None,
         dtype=None
     ):
@@ -26,13 +24,11 @@ class MultiHeadSelfAttention(nn.Module):
         self.k_proj = Linear(d_model, d_model, dtype=dtype, device=device)
         self.v_proj = Linear(d_model, d_model, dtype=dtype, device=device)
         self.output_proj = Linear(d_model, d_model, dtype=dtype, device=device)
-        self.rope = None
-        if theta and max_seq_len:
-            self.rope = RoPE(theta, self.d_k, max_seq_len, device)
 
     def forward(
         self,
         in_features: Float[Tensor, " ... seq_len d_model"],
+        rope: RoPE | None=None,
         token_positions: Int[torch.Tensor, "... seq_len"] | None=None,
     ) -> Float[Tensor, "... seq_len d_model"]:
         seq_len = in_features.shape[-2]
@@ -41,7 +37,7 @@ class MultiHeadSelfAttention(nn.Module):
         K = einops.rearrange(self.k_proj(in_features), "... seq (head d_k) -> ... head seq d_k", head=self.num_heads)
         V = einops.rearrange(self.v_proj(in_features), "... seq (head d_v) -> ... head seq d_v", head=self.num_heads)
         if token_positions is not None:
-            Q = self.rope(Q, token_positions)
-            K = self.rope(K, token_positions)
+            Q = rope(Q, token_positions)
+            K = rope(K, token_positions)
         attention = scaled_dot_product_attention(Q, K, V, mask)
         return self.output_proj(einops.rearrange(attention, "... head seq d_v -> ... seq (head d_v)"))
