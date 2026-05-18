@@ -1,5 +1,3 @@
-from math import sqrt
-from einops import einsum
 from jaxtyping import Float
 import torch
 import torch.nn as nn
@@ -27,7 +25,7 @@ class TransformerBlock(nn.Module):
         self.attn = MultiHeadSelfAttention(d_model, num_heads, theta, max_seq_len, device, dtype)
         self.ffn = SwiGLU(d_model, d_ff, device, dtype)
 
-    def forward(self, x: Float[Tensor, "... seq d_model"]) -> torch.Tensor:
+    def forward(self, x: Float[Tensor, "... seq d_model"]) -> Float[Tensor, "... seq d_model"]:
         token_positions = torch.arange(x.shape[-2], device=x.device, dtype=torch.long)
         hidden = x + self.attn(self.ln1(x), token_positions)
         return hidden + self.ffn(self.ln2(hidden))

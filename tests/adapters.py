@@ -17,6 +17,7 @@ from cs336_basics.model.rmsnorm import RMSNorm
 from cs336_basics.model.rope import RoPE
 from cs336_basics.model.swiglu_ff import SwiGLU
 from cs336_basics.model.transformer_block import TransformerBlock
+from cs336_basics.model.transformer_lm import TransformerLM
 from cs336_basics.tokenizer.bpe import BPE
 from cs336_basics.tokenizer.tokenizer import Tokenizer
 
@@ -65,7 +66,7 @@ def run_embedding(
     """
 
     model = Embedding(vocab_size, d_model)
-    model.load_state_dict({"weights": weights})
+    model.load_state_dict({"weight": weights})
     return model(token_ids)
 
 
@@ -393,7 +394,9 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    transformer_lm = TransformerLM(vocab_size, context_length, d_model, num_layers, num_heads, d_ff, rope_theta)
+    transformer_lm.load_state_dict(weights)
+    return transformer_lm(in_indices)
 
 
 def run_rmsnorm(
