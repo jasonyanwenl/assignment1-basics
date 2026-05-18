@@ -98,9 +98,9 @@ def run_swiglu(
     # swiglu.w3.weight.data = w3_weight
     model = SwiGLU(d_model, d_ff)
     model.load_state_dict({
-        "w1_weight": w1_weight,
-        "w2_weight": w2_weight,
-        "w3_weight": w3_weight,
+        "w1.weights": w1_weight,
+        "w2.weights": w2_weight,
+        "w3.weights": w3_weight,
     })
     return model(in_features)
 
