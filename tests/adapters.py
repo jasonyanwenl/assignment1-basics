@@ -101,9 +101,9 @@ def run_swiglu(
     # swiglu.w3.weight.data = w3_weight
     model = SwiGLU(d_model, d_ff)
     model.load_state_dict({
-        "w1.weights": w1_weight,
-        "w2.weights": w2_weight,
-        "w3.weights": w3_weight,
+        "w1.weight": w1_weight,
+        "w2.weight": w2_weight,
+        "w3.weight": w3_weight,
     })
     return model(in_features)
 
@@ -162,10 +162,10 @@ def run_multihead_self_attention(
     """
     multihead_self_attention = MultiHeadSelfAttention(d_model, num_heads)
     multihead_self_attention.load_state_dict({
-        "q_proj.weights": q_proj_weight,
-        "k_proj.weights": k_proj_weight,
-        "v_proj.weights": v_proj_weight,
-        "o_proj.weights": o_proj_weight,
+        "q_proj.weight": q_proj_weight,
+        "k_proj.weight": k_proj_weight,
+        "v_proj.weight": v_proj_weight,
+        "output_proj.weight": o_proj_weight,
     })
     return multihead_self_attention(in_features)
 
@@ -209,10 +209,10 @@ def run_multihead_self_attention_with_rope(
     """
     multihead_self_attention = MultiHeadSelfAttention(d_model, num_heads, theta, max_seq_len)
     multihead_self_attention.load_state_dict({
-        "q_proj.weights": q_proj_weight,
-        "k_proj.weights": k_proj_weight,
-        "v_proj.weights": v_proj_weight,
-        "o_proj.weights": o_proj_weight,
+        "q_proj.weight": q_proj_weight,
+        "k_proj.weight": k_proj_weight,
+        "v_proj.weight": v_proj_weight,
+        "output_proj.weight": o_proj_weight,
     })
     return multihead_self_attention(in_features, token_positions)
 
