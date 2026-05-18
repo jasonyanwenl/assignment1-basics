@@ -19,6 +19,6 @@ def scaled_dot_product_attention(
     d_k = Q.shape[-1]
     pre_softmax = einsum(Q, K, "... n d_k, ... m d_k -> ... n m") / math.sqrt(d_k)
     if mask is not None:
-        pre_softmax = pre_softmax + torch.zeros(mask.shape).masked_fill(~mask, float('-inf'))
+        pre_softmax = pre_softmax + torch.zeros(mask.shape, device=mask.device).masked_fill(~mask, float('-inf'))
     post_softmax = softmax(pre_softmax, -1)
     return einsum(post_softmax, V, "... n m, ... m d_v -> ... n d_v")
