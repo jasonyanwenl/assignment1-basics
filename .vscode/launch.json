@@ -4,22 +4,13 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
-        {
-            "name": "Python: Current File",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
         {
             "name": "Debug",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "module": "pytest",
             "args": [
-                "tests/test_tokenizer.py::test_ascii_string_matches_tiktoken",
+                "tests/test_model.py::test_scaled_dot_product_attention",
                 "-s",
                 "--log-cli-level=INFO"
             ],
@@ -29,7 +20,7 @@
         },
         {
             "name": "Debug test_foo",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "module": "pytest",
             "args": [
