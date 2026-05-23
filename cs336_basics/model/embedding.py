@@ -1,3 +1,4 @@
+from jaxtyping import Int
 import torch
 import torch.nn as nn
 
@@ -14,5 +15,5 @@ class Embedding(nn.Module):
             )
         )
 
-    def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
+    def forward(self, token_ids: Int[torch.Tensor, "... seq"]) -> torch.Tensor:
         return self.weight[token_ids]

@@ -1,6 +1,6 @@
 import math
 from einops import einsum
-from jaxtyping import Float, Bool
+from jaxtyping import Float, Bool, Int
 import torch
 from torch import Tensor
 
@@ -22,3 +22,12 @@ def scaled_dot_product_attention(
         pre_softmax = pre_softmax.masked_fill(~mask, float('-inf'))
     post_softmax = softmax(pre_softmax, -1)
     return einsum(post_softmax, V, "... n m, ... m d_v -> ... n d_v")
+
+def cross_entropy(
+    inputs: Float[Tensor, " batch_size vocab_size"],
+    targets: Int[Tensor, " batch_size"]
+) -> Float[Tensor, ""]:
+    m = torch.max(inputs, dim=-1, keepdim=True)[0]
+    exp = torch.exp(inputs - m)
+    logsum = torch.log(torch.sum(exp, dim=-1, keepdim=True))
+    return torch.mean(logsum - inputs.gather(-1, targets.unsqueeze(-1)) + m)
