@@ -9,7 +9,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
-from cs336_basics import functions
+from cs336_basics import adamw, functions
 from cs336_basics.model.embedding import Embedding
 from cs336_basics.model.linear import Linear
 from cs336_basics.model.multihead_self_attention import MultiHeadSelfAttention
@@ -513,7 +513,7 @@ def get_adamw_cls() -> Any:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
-    raise NotImplementedError
+    return adamw.AdamW
 
 
 def run_get_lr_cosine_schedule(
