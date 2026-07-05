@@ -1,0 +1,36 @@
+Rope (reused across all blocks, negligible):
+    S x D/2 x 2 = S x D / num_heads
+Activation:
+    Transformer Block (x num_layers):
+        RMS Norm:
+            B x S x D x 2
+        Attn:
+            Q_proj = B x S x D
+            K_proj = B x S x D
+            V_proj = B x S x D
+            QK = B x num_heads x S x S
+            Softmax = B x num_heads x S x S
+            Weighted Sum of Values = B x S x D
+            O_proj = B x S x D
+            Total = 5 x B x S x D + 2 x B x num_heads x S x S
+        FFN:
+            up_w1_proj = B x S x D_ff
+            up_w3_proj = B x S x D_ff
+            silu_out = B x S x D_ff
+            product = B x S x D_ff
+            down_w2_proj = B x S x D
+            Total = 4 x B x S x D_ff + B x S x D
+    Final RMS Norm:
+        B x S x D
+    Output Embed:
+        B x S x vocab_size
+    Cross-Entropy on logits:
+        B x S x vocab_size
+Activation_total = 
+    (
+        (B x S x D x 2) 
+        + (5 x B x S x D + 2 x B x num_heads x S x S)
+        + (4 x B x S x D_ff + B x S x D)
+    ) x num_layers
+    + B x S x D + B x S x vocab_size + B x S x vocab_size
+= (8BSD + 2BSSN_heads + 4BSD_ff) x N_layers + BSD + 2BSV
