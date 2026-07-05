@@ -1,5 +1,6 @@
 import math
-from typing import Iterable
+import os
+from typing import IO, BinaryIO, Iterable
 from einops import einsum
 from jaxtyping import Float, Bool, Int
 import numpy as np
@@ -75,3 +76,27 @@ def data_loading(
         torch.tensor(dataset[starts + offsets]).to(device=device),
         torch.tensor(dataset[starts + offsets] + 1).to(device=device)
     )
+
+
+def save_checkpoint(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    iteration: int,
+    out: str | os.PathLike | BinaryIO | IO[bytes]
+):
+    obj = {
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "iteration": iteration,
+    }
+    torch.save(obj, out)
+
+def load_checkpoint(
+    src: str | os.PathLike | BinaryIO | IO[bytes],
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+) -> int:
+    obj = torch.load(src)
+    model.load_state_dict(obj["model"])
+    optimizer.load_state_dict(obj["optimizer"])
+    return obj["iteration"]
