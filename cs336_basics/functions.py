@@ -2,6 +2,8 @@ import math
 from typing import Iterable
 from einops import einsum
 from jaxtyping import Float, Bool, Int
+import numpy as np
+import numpy.typing as npt
 import torch
 from torch import Tensor
 
@@ -63,3 +65,13 @@ def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: flo
         if param.grad is None:
             continue
         param.grad = scale * param.grad
+
+def data_loading(
+    dataset: npt.NDArray, batch_size: int, context_length: int, device: str
+) -> tuple[torch.Tensor, torch.Tensor]:
+    starts = np.random.randint(0, len(dataset) - context_length, size=batch_size).reshape(-1, 1)
+    offsets = np.arange(context_length)
+    return (
+        torch.tensor(dataset[starts + offsets]).to(device=device),
+        torch.tensor(dataset[starts + offsets] + 1).to(device=device)
+    )
