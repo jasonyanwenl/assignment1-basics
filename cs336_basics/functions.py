@@ -1,4 +1,5 @@
 import math
+from typing import Iterable
 from einops import einsum
 from jaxtyping import Float, Bool, Int
 import torch
@@ -47,3 +48,18 @@ def learning_rate_schedule(
                 * (max_learning_rate - min_learning_rate))
     else:
         return min_learning_rate
+
+def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+    square_sum = 0.0
+    for param in parameters:
+        if param.grad is None:
+            continue
+        square_sum += param.grad.pow(2).sum()
+    l2_norm = square_sum.sqrt()
+    if l2_norm < max_l2_norm:
+        return
+    scale = max_l2_norm / (l2_norm + 1e-6)
+    for param in parameters:
+        if param.grad is None:
+            continue
+        param.grad = scale * param.grad
