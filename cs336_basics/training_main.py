@@ -3,6 +3,7 @@ import logging
 import os
 import einops
 import torch
+import wandb
 from cs336_basics.adamw import AdamW
 from cs336_basics.functions import cross_entropy, data_loading, gradient_clipping, learning_rate_schedule, load_checkpoint, save_checkpoint
 from cs336_basics.model.transformer_lm import TransformerLM
@@ -45,6 +46,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace):
+    run = wandb.init(
+        entity="lyw1124278064-personal",
+        project="cs336-assignment-1",
+        config=vars(args),
+    )
+
     logger.info(f"All params:")
     for k, v in vars(args).items():
         logger.info("\t%s: %s", k, v)
@@ -66,8 +73,7 @@ def main(args: argparse.Namespace):
         args.rope_theta,
         device,
         dtype=torch.float32
-    ).to(device)
-    model.train()
+    )
 
     optimizer = AdamW(
         model.parameters(),
@@ -82,6 +88,9 @@ def main(args: argparse.Namespace):
         logger.info(f"Model loading")
         start_it = load_checkpoint(args.path_state_src, model, optimizer) + 1
         logger.info(f"Model loaded")
+
+    model.to(device)
+    model.train()
 
     for it in range(start_it, args.iterations):
         logger.info(f"[it={it}] Batch sampling")
@@ -103,6 +112,10 @@ def main(args: argparse.Namespace):
         )
 
         logger.info(f"[it={it}] loss = {loss.item()}")
+        run.log({
+            "train/loss": loss.item(),
+            "train/lr": lr,
+        }, step=it)
 
         logger.info(f"[it={it}] Backwarding")
         optimizer.zero_grad()
@@ -128,6 +141,8 @@ def main(args: argparse.Namespace):
         path_state = f"{args.path_state_dir}/{it}.pth"
         save_checkpoint(model, optimizer, it, path_state)
         logger.info(f"[it={it}] Saved to {path_state}")
+
+    run.finish()
 
 
 if __name__ == "__main__":
