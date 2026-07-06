@@ -51,20 +51,15 @@ def learning_rate_schedule(
     else:
         return min_learning_rate
 
-def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
-    square_sum = 0.0
-    for param in parameters:
-        if param.grad is None:
-            continue
-        square_sum += param.grad.pow(2).sum()
+def gradient_clipping(params_itr: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+    params = [p for p in params_itr if p.grad is not None]
+    square_sum = sum(p.grad.pow(2).sum() for p in params)
     l2_norm = square_sum.sqrt()
     if l2_norm < max_l2_norm:
         return
     scale = max_l2_norm / (l2_norm + 1e-6)
-    for param in parameters:
-        if param.grad is None:
-            continue
-        param.grad = scale * param.grad
+    for param in params:
+        param.grad.mul_(scale)
 
 def data_loading(
     dataset: npt.NDArray, batch_size: int, context_length: int, device: str
@@ -72,8 +67,8 @@ def data_loading(
     starts = np.random.randint(0, len(dataset) - context_length, size=batch_size).reshape(-1, 1)
     offsets = np.arange(context_length)
     return (
-        torch.tensor(dataset[starts + offsets]).to(device),
-        torch.tensor(dataset[starts + offsets + 1]).to(device)
+        torch.tensor(dataset[starts + offsets], dtype=torch.long).to(device),
+        torch.tensor(dataset[starts + offsets + 1], dtype=torch.long).to(device)
     )
 
 
@@ -95,7 +90,7 @@ def load_checkpoint(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
 ) -> int:
-    obj = torch.load(src)
+    obj = torch.load(src, map_location=next(model.parameters()).device)
     model.load_state_dict(obj["model"])
     optimizer.load_state_dict(obj["optimizer"])
     return obj["iteration"]
