@@ -112,6 +112,17 @@ def main(args: argparse.Namespace):
         )
 
         logger.info(f"[it={it}] loss = {loss.item()}")
+
+        lr = learning_rate_schedule(
+            it,
+            args.max_lr,
+            args.min_lr,
+            args.warmup_iters,
+            args.cosine_cycle_iters
+        )
+        for group in optimizer.param_groups:
+            group["lr"] = lr
+
         run.log({
             "train/loss": loss.item(),
             "train/lr": lr,
@@ -123,16 +134,6 @@ def main(args: argparse.Namespace):
         logger.info(f"[it={it}] Backwarded")
 
         gradient_clipping(model.parameters(), args.max_l2_norm)
-        
-        lr = learning_rate_schedule(
-            it,
-            args.max_lr,
-            args.min_lr,
-            args.warmup_iters,
-            args.cosine_cycle_iters
-        )
-        for group in optimizer.param_groups:
-            group["lr"] = lr
 
         logger.info(f"[it={it}] Optimizing. lr = {lr}")
         optimizer.step()

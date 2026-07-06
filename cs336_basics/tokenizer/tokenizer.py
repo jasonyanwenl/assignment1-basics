@@ -32,14 +32,15 @@ class Tokenizer:
         escaped = [re.escape(t) for t in sorted(self.special_tokens, key=len, reverse=True)]
         self.split_delimiter = '(' + "|".join(escaped) + ')'
 
-        self.vocab2id: dict[bytes, int] = defaultdict(int)
-        next_id = float('-inf')
+        self.vocab2id: dict[bytes, int] = {}
+        max_id = float('-inf')
         for k, v in vocab.items():
             self.vocab2id[v] = k
-            next_id = max(next_id, k)
+            max_id = max(max_id, k)
 
-        logger.info("next id: %s", next_id)
+        logger.info("max id: %s", max_id)
 
+        next_id = max_id + 1
         for special_token in self.special_tokens:
             special_token_bytes = special_token.encode('utf-8')
             if special_token_bytes not in self.vocab2id:
