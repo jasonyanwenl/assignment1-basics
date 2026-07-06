@@ -13,7 +13,6 @@ def softmax(x: Float[Tensor, "..."], dim: int) -> Float[Tensor, " ..."]:
     exp = torch.exp(x - torch.max(x, dim=dim, keepdim=True)[0])
     return exp / torch.sum(exp, dim=dim, keepdim=True)
 
-
 def scaled_dot_product_attention(
     Q: Float[Tensor, "batch_size ... seq_len d_k"],
     K: Float[Tensor, "batch_size ... seq_len d_k"],
@@ -73,8 +72,8 @@ def data_loading(
     starts = np.random.randint(0, len(dataset) - context_length, size=batch_size).reshape(-1, 1)
     offsets = np.arange(context_length)
     return (
-        torch.tensor(dataset[starts + offsets]).to(device=device),
-        torch.tensor(dataset[starts + offsets] + 1).to(device=device)
+        torch.tensor(dataset[starts + offsets]).to(device),
+        torch.tensor(dataset[starts + offsets + 1]).to(device)
     )
 
 
