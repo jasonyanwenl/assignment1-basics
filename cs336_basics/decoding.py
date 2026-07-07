@@ -17,10 +17,10 @@ def decoding(
     top_p_thres: float=None
 ) -> npt.NDArray:
     device = next(model.parameters()).device
+    model.eval()
     with torch.no_grad():
         batch_outputs: Int[Tensor, "batch seq"] = torch.tensor(batch_inputs, dtype=torch.long).to(device)
         finished = torch.zeros(batch_inputs.shape[0], dtype=torch.bool, device=device)
-        model.eval()
         for _ in range(min(max_tokens, max(0, context_length - batch_inputs.shape[1]))):
             if finished.all():
                 break

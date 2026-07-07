@@ -17,9 +17,10 @@ def parse_args() -> argparse.Namespace:
     # TODO: either require=True, or specify default
     parser = argparse.ArgumentParser(description="Train Transformer LM")
 
-    parser.add_argument("--path-train", default="data/tokens_tinystories_valid.npy")
+    parser.add_argument("--path-eval", default="data/tokens_tinystories_valid.npy")
     parser.add_argument("--path-state-dir", default="data/out")
     parser.add_argument("--path-state-src", required=False)
+    parser.add_argument("--path-train", default="data/tokens_tinystories_valid.npy")
 
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--context-length", type=int)
@@ -46,6 +47,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace):
+    seed = 202607091958
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
     run = wandb.init(
         entity="lyw1124278064-personal",
         project="cs336-assignment-1",
@@ -61,6 +66,7 @@ def main(args: argparse.Namespace):
 
     logger.info(f"Data loading")
     dataset_train: npt.NDArray = np.load(args.path_train, mmap_mode='r')
+    dataset_eval: npt.NDArray = np.load(args.path_eval, mmap_mode='r')
     logger.info(f"Data loaded")
 
     model = TransformerLM(
@@ -90,7 +96,13 @@ def main(args: argparse.Namespace):
         logger.info(f"Model loaded")
 
     model.to(device)
-    model.train()
+
+    eval_in_indices, eval_tgt_indices = data_loading(
+        dataset_eval,
+        args.batch_size,
+        args.context_length,
+        device
+    )
 
     for it in range(start_it, args.iterations):
         logger.info(f"[it={it}] Batch sampling")
@@ -103,6 +115,7 @@ def main(args: argparse.Namespace):
         logger.info(f"[it={it}] Batch sampled")
 
         logger.info(f"[it={it}] Forwarding")
+        model.train()
         out_logits = model(in_indices)
         logger.info(f"[it={it}] Forwarded")
 
@@ -142,6 +155,19 @@ def main(args: argparse.Namespace):
         path_state = f"{args.path_state_dir}/{it}.pth"
         save_checkpoint(model, optimizer, it, path_state)
         logger.info(f"[it={it}] Saved to {path_state}")
+
+        if it % 5 == 0:
+            model.eval()
+            with torch.no_grad():
+                eval_out_logits = model(eval_in_indices)
+                eval_loss = cross_entropy(
+                    einops.rearrange(eval_out_logits, "... seq vocab -> (... seq) vocab"),
+                    einops.rearrange(eval_tgt_indices, "... seq -> (... seq)")
+                )
+                logger.info(f"[it={it}] Eval loss = {eval_loss.item()}")
+                run.log({
+                    "eval/loss": eval_loss.item(),
+                }, step=it)
 
     run.finish()
 
