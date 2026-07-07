@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime
 import logging
 import os
 import time
@@ -62,6 +63,10 @@ def main(args: argparse.Namespace):
         logger.info("\t%s: %s", k, v)
 
     os.makedirs(args.path_state_dir, exist_ok=True)
+    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path_state_subfolder = f"{args.path_state_dir}/{run_ts}"
+    os.makedirs(path_state_subfolder, exist_ok=True)
+
     device = torch.device(args.device)
 
     logger.info(f"Data loading")
@@ -159,9 +164,10 @@ def main(args: argparse.Namespace):
         run.log(step_log, step=it)
         logger.info(f"[it={it}] {step_log}")
 
-        path_state = f"{args.path_state_dir}/{it}.pth"
-        save_checkpoint(model, optimizer, it, path_state)
-        logger.info(f"[it={it}] Saved to {path_state}")
+        if it % 100 == 0:
+            path_state = f"{path_state_subfolder}/{it}.pth"
+            save_checkpoint(model, optimizer, it, path_state)
+            logger.info(f"[it={it}] Saved to {path_state}")
 
         if it % 5 == 0:
             model.eval()
