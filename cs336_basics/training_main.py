@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import time
 import einops
 import torch
 import wandb
@@ -104,7 +105,10 @@ def main(args: argparse.Namespace):
         device
     )
 
+    train_start = time.time()
+
     for it in range(start_it, args.iterations):
+        step_start = time.time()
         logger.info(f"[it={it}] Batch sampling")
         in_indices, tgt_indices = data_loading(
             dataset_train,
@@ -124,8 +128,6 @@ def main(args: argparse.Namespace):
             einops.rearrange(tgt_indices, "... seq -> (... seq)")
         )
 
-        logger.info(f"[it={it}] loss = {loss.item()}")
-
         lr = learning_rate_schedule(
             it,
             args.max_lr,
@@ -136,11 +138,6 @@ def main(args: argparse.Namespace):
         for group in optimizer.param_groups:
             group["lr"] = lr
 
-        run.log({
-            "train/loss": loss.item(),
-            "train/lr": lr,
-        }, step=it)
-
         logger.info(f"[it={it}] Backwarding")
         optimizer.zero_grad()
         loss.backward()
@@ -148,9 +145,20 @@ def main(args: argparse.Namespace):
 
         gradient_clipping(model.parameters(), args.max_l2_norm)
 
-        logger.info(f"[it={it}] Optimizing. lr = {lr}")
+        logger.info(f"[it={it}] Optimizing.")
         optimizer.step()
         logger.info(f"[it={it}] Optimized")
+
+        time_now = time.time()
+
+        step_log = {
+            "train/loss": loss.item(),
+            "train/lr": lr,
+            "time/elapsed_sec": time_now - train_start,
+            "time/step_sec": time_now - step_start,
+        }
+        run.log(step_log, step=it)
+        logger.info(f"[it={it}] {step_log}")
 
         path_state = f"{args.path_state_dir}/{it}.pth"
         save_checkpoint(model, optimizer, it, path_state)
@@ -168,6 +176,16 @@ def main(args: argparse.Namespace):
                 run.log({
                     "eval/loss": eval_loss.item(),
                 }, step=it)
+
+    total_steps = args.iterations - start_it
+    total_wall_sec = time.time() - train_start
+
+    logger.info("Finished %d steps in %.1f sec (%.2f sec/step)",
+                total_steps, total_wall_sec, total_wall_sec / total_steps)
+
+    run.summary["total_steps"] = total_steps
+    run.summary["wall_clock_sec"] = total_wall_sec
+    run.summary["sec_per_step"] = total_wall_sec / total_steps
 
     run.finish()
 
