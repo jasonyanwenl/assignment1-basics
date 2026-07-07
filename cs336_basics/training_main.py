@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
-    # TODO: either require=True, or specify default
     parser = argparse.ArgumentParser(description="Train Transformer LM")
 
     parser.add_argument("--path-eval", default="data/tokens_tinystories_valid.npy")
@@ -23,32 +22,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--path-state-src", required=False)
     parser.add_argument("--path-train", default="data/tokens_tinystories_valid.npy")
 
-    parser.add_argument("--batch-size", type=int)
-    parser.add_argument("--context-length", type=int)
+    parser.add_argument("--batch-size", type=int, default=10)
+    parser.add_argument("--context-length", type=int, default=256)
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--d-ff", type=int)
-    parser.add_argument("--d-model", type=int)
-    parser.add_argument("--num-heads", type=int)
-    parser.add_argument("--num-layers", type=int)
-    parser.add_argument("--rope-theta", type=float)
-    parser.add_argument("--vocab-size", type=int)
+    parser.add_argument("--d-ff", type=int, default=1344)
+    parser.add_argument("--d-model", type=int, default=512)
+    parser.add_argument("--num-heads", type=int, default=16)
+    parser.add_argument("--num-layers", type=int, default=4)
+    parser.add_argument("--rope-theta", type=float, default=10000.0)
+    parser.add_argument("--vocab-size", type=int, default=10000)
 
-    parser.add_argument("--beta1", type=float)
-    parser.add_argument("--beta2", type=float)
-    parser.add_argument("--cosine-cycle-iters", type=int)
-    parser.add_argument("--eps", type=float)
-    parser.add_argument("--iterations", type=int, default=3)
-    parser.add_argument("--max-l2-norm", type=float)
-    parser.add_argument("--max-lr", type=float)
-    parser.add_argument("--min-lr", type=float)
-    parser.add_argument("--warmup-iters", type=int)
-    parser.add_argument("--weight-decay", type=float)
+    parser.add_argument("--beta1", type=float, default=0.9)
+    parser.add_argument("--beta2", type=float, default=0.999)
+    parser.add_argument("--cosine-cycle-iters", type=int, default=6)
+    parser.add_argument("--eps", type=float, default=1e-8)
+    parser.add_argument("--iterations", type=int, default=10)
+    parser.add_argument("--max-l2-norm", type=float, default=1e-2)
+    parser.add_argument("--max-lr", type=float, default=1e-2)
+    parser.add_argument("--min-lr", type=float, default=1e-4)
+    parser.add_argument("--warmup-iters", type=int, default=3)
+    parser.add_argument("--weight-decay", type=float, default=0.01)
 
     return parser.parse_args()
 
 
 def main(args: argparse.Namespace):
-    seed = 202607091958
+    seed = 100000
     np.random.seed(seed)
     torch.manual_seed(seed)
 
@@ -172,10 +171,13 @@ def main(args: argparse.Namespace):
                     einops.rearrange(eval_out_logits, "... seq vocab -> (... seq) vocab"),
                     einops.rearrange(eval_tgt_indices, "... seq -> (... seq)")
                 )
-                logger.info(f"[it={it}] Eval loss = {eval_loss.item()}")
-                run.log({
+                eval_perplexity = eval_loss.exp()
+                eval_log = {
                     "eval/loss": eval_loss.item(),
-                }, step=it)
+                    "eval/perplexity": eval_perplexity.item(),
+                }
+                logger.info(f"[it={it}] Eval: {eval_log}")
+                run.log(eval_log, step=it)
 
     total_steps = args.iterations - start_it
     total_wall_sec = time.time() - train_start
