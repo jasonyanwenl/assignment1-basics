@@ -6,11 +6,14 @@ import time
 import einops
 import torch
 import wandb
+from cs336_basics import decoding
 from cs336_basics.adamw import AdamW
 from cs336_basics.functions import cross_entropy, data_loading, gradient_clipping, learning_rate_schedule, load_checkpoint, save_checkpoint
 from cs336_basics.model.transformer_lm import TransformerLM
 import numpy as np
 import numpy.typing as npt
+
+from cs336_basics.tokenizer.tokenizer import Tokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +28,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--batch-size", type=int, default=10)
     parser.add_argument("--context-length", type=int, default=256)
-    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--device", type=torch.device, default=torch.device("cpu"))
     parser.add_argument("--d-ff", type=int, default=1344)
     parser.add_argument("--d-model", type=int, default=512)
     parser.add_argument("--num-heads", type=int, default=16)
@@ -48,19 +51,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace):
-    seed = 100000
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-
     run = wandb.init(
         entity="lyw1124278064-personal",
         project="cs336-assignment-1",
         config=vars(args),
     )
-
-    logger.info(f"All params:")
-    for k, v in vars(args).items():
-        logger.info("\t%s: %s", k, v)
 
     os.makedirs(args.path_state_dir, exist_ok=True)
     run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -82,7 +77,7 @@ def main(args: argparse.Namespace):
         args.num_heads,
         args.d_ff,
         args.rope_theta,
-        device,
+        args.device,
         dtype=torch.float32
     )
 
@@ -96,9 +91,7 @@ def main(args: argparse.Namespace):
 
     start_it = 0
     if args.path_state_src:
-        logger.info(f"Model loading")
         start_it = load_checkpoint(args.path_state_src, model, optimizer) + 1
-        logger.info(f"Model loaded")
 
     model.to(device)
 
@@ -108,6 +101,8 @@ def main(args: argparse.Namespace):
         args.context_length,
         device
     )
+
+    # TODO: Monitor the norms of activations, model weights, and gradients to make sure they are not exploding or vanishing
 
     train_start = time.time()
 
@@ -164,12 +159,12 @@ def main(args: argparse.Namespace):
         run.log(step_log, step=it)
         logger.info(f"[it={it}] {step_log}")
 
-        if it % 100 == 0:
+        if it == args.iterations - 1 or it % 500 == 0:
             path_state = f"{path_state_subfolder}/{it}.pth"
             save_checkpoint(model, optimizer, it, path_state)
             logger.info(f"[it={it}] Saved to {path_state}")
 
-        if it % 5 == 0:
+        if it == args.iterations - 1 or it % 100 == 0:
             model.eval()
             with torch.no_grad():
                 eval_out_logits = model(eval_in_indices)
@@ -198,6 +193,65 @@ def main(args: argparse.Namespace):
     run.finish()
 
 
+def peek_decoding(args: argparse.Namespace):
+    model = TransformerLM(
+        args.vocab_size,
+        args.context_length,
+        args.d_model,
+        args.num_layers,
+        args.num_heads,
+        args.d_ff,
+        args.rope_theta,
+        args.device,
+        dtype=torch.float32
+    )
+
+    optimizer = AdamW(
+        model.parameters(),
+        0.0,
+        args.weight_decay,
+        (args.beta1, args.beta2),
+        args.eps
+    )
+
+    path_state_src = args.path_state_src if args.path_state_src else "data/out/20260707_133459/199.pth"
+    load_checkpoint(path_state_src, model, optimizer)
+
+    vocab_filepath="vocab_tinystories.json"
+    merges_filepath="merges_tinystories.txt"
+    special_tokens=["<|endoftext|>"]
+    tokenizer = Tokenizer.from_files(
+        vocab_filepath=vocab_filepath,
+        merges_filepath=merges_filepath,
+        special_tokens=special_tokens
+    )
+
+    dataset_train: npt.NDArray = np.load("data/tokens_tinystories_valid.npy", mmap_mode='r')
+    in_indices, tgt_indices = data_loading(dataset_train, 1, 100, "cpu")
+    in_indices, tgt_indices = in_indices.numpy(), tgt_indices.numpy()
+    out_indices = decoding.decoding(in_indices, model, args.context_length,
+        tokenizer.vocab2id[b"<|endoftext|>"])
+
+    logger.info("Peek decoding:\n")
+    for batch_idx in range(in_indices.shape[0]):
+        in_text = tokenizer.decode(in_indices[batch_idx])
+        tgt_text = tokenizer.decode(tgt_indices[batch_idx])
+        out_text = tokenizer.decode(out_indices[batch_idx])
+        logger.info(f"[{batch_idx}] in_text:\n{in_text}\nout_text:\n{out_text}\ntgt_text:\n{tgt_text}")
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    main(parse_args())
+
+    seed = 100000
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    args = parse_args()
+
+    logger.info(f"All params:")
+    for k, v in vars(args).items():
+        logger.info("\t%s: %s", k, v)
+
+    main(args)
+    # peek_decoding(args)

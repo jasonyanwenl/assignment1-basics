@@ -12,7 +12,7 @@ def decoding(
     model: TransformerLM,
     context_length: int,
     eot_token_id: int,
-    max_tokens: int=100,
+    max_tokens: int=1000,
     temperature: float=1.0,
     top_p_thres: float=None
 ) -> npt.NDArray:

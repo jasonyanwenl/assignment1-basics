@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 from typing import IO, BinaryIO, Iterable
@@ -8,6 +9,9 @@ import numpy.typing as npt
 import torch
 from torch import Tensor
 
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 def softmax(x: Float[Tensor, "..."], dim: int) -> Float[Tensor, " ..."]:
     exp = torch.exp(x - torch.max(x, dim=dim, keepdim=True)[0])
@@ -79,19 +83,23 @@ def save_checkpoint(
     iteration: int,
     out: str | os.PathLike | BinaryIO | IO[bytes]
 ):
+    logger.info(f"Saving checkpoint to: {out}")
     obj = {
         "model": model.state_dict(),
         "optimizer": optimizer.state_dict(),
         "iteration": iteration,
     }
     torch.save(obj, out)
+    logger.info(f"Saved checkpoint to: {out}")
 
 def load_checkpoint(
     src: str | os.PathLike | BinaryIO | IO[bytes],
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
 ) -> int:
+    logger.info(f"Loading checkpoint from: {src}")
     obj = torch.load(src, map_location=next(model.parameters()).device)
     model.load_state_dict(obj["model"])
     optimizer.load_state_dict(obj["optimizer"])
+    logger.info(f"Loaded checkpoint from: {src}")
     return obj["iteration"]
