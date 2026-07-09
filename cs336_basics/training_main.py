@@ -1,6 +1,7 @@
 import argparse
 from datetime import datetime
 import logging
+import math
 import os
 import time
 import einops
@@ -8,7 +9,7 @@ import torch
 import wandb
 from cs336_basics import decoding
 from cs336_basics.adamw import AdamW
-from cs336_basics.functions import cross_entropy, data_loading, gradient_clipping, learning_rate_schedule, load_checkpoint, save_checkpoint
+from cs336_basics.functions import cross_entropy, data_loading, data_loading_by_starts, gradient_clipping, learning_rate_schedule, load_checkpoint, save_checkpoint
 from cs336_basics.model.transformer_lm import TransformerLM
 import numpy as np
 import numpy.typing as npt
@@ -24,7 +25,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--path-eval", default="data/tokens_tinystories_valid.npy")
     parser.add_argument("--path-state-dir", default="data/out")
     parser.add_argument("--path-state-src", required=False)
-    parser.add_argument("--path-train", default="data/tokens_tinystories_valid.npy")
+    parser.add_argument("--path-train", default="data/tokens_tinystories_train.npy")
+    parser.add_argument("--path-vocab", default="vocab_tinystories.json")
+    parser.add_argument("--path-merges", default="merges_tinystories.txt")
 
     parser.add_argument("--batch-size", type=int, default=10)
     parser.add_argument("--context-length", type=int, default=256)
@@ -77,7 +80,7 @@ def main(args: argparse.Namespace):
         args.num_heads,
         args.d_ff,
         args.rope_theta,
-        args.device,
+        device,
         dtype=torch.float32
     )
 
@@ -92,35 +95,51 @@ def main(args: argparse.Namespace):
     start_it = 0
     if args.path_state_src:
         start_it = load_checkpoint(args.path_state_src, model, optimizer) + 1
-
+    checkpoint_every = max(args.iterations // 10, 10)
     model.to(device)
 
-    eval_in_indices, eval_tgt_indices = data_loading(
+    logger.info("Loading eval batch indices")
+    eval_batch_size = args.batch_size
+    eval_last_idx = len(dataset_eval) - args.context_length  # exclusive
+    total_eval_batches = (eval_last_idx + eval_batch_size - 1) // eval_batch_size
+    eval_in_indices, eval_tgt_indices = data_loading_by_starts(
         dataset_eval,
-        args.batch_size,
+        torch.linspace(0, eval_last_idx - 1, eval_batch_size).round().long().reshape(-1, 1),
         args.context_length,
         device
     )
+    eval_every = max(args.iterations // 50, 10)
+    logger.info("Loaded eval batch indices")
 
-    # TODO: Monitor the norms of activations, model weights, and gradients to make sure they are not exploding or vanishing
+    logger.info("Loading tokenizer")
+    peek_in_indices, _ = data_loading(dataset_eval, 1, int(args.context_length * 0.5), device)
+    peek_in_indices = peek_in_indices.cpu().numpy()
+    peek_every = max(args.iterations // 50, 10)
+    tokenizer = Tokenizer.from_files(
+        vocab_filepath=args.path_vocab,
+        merges_filepath=args.path_merges,
+        special_tokens=["<|endoftext|>"]
+    )
+    eot_id = tokenizer.vocab2id[b"<|endoftext|>"]
+    logger.info("Loaded tokenizer")
 
     train_start = time.time()
 
     for it in range(start_it, args.iterations):
         step_start = time.time()
-        logger.info(f"[it={it}] Batch sampling")
+        # logger.info(f"[it={it}] Batch sampling")
         in_indices, tgt_indices = data_loading(
             dataset_train,
             args.batch_size,
             args.context_length,
             device
         )
-        logger.info(f"[it={it}] Batch sampled")
+        # logger.info(f"[it={it}] Batch sampled")
 
-        logger.info(f"[it={it}] Forwarding")
+        # logger.info(f"[it={it}] Forwarding")
         model.train()
         out_logits = model(in_indices)
-        logger.info(f"[it={it}] Forwarded")
+        # logger.info(f"[it={it}] Forwarded")
 
         loss = cross_entropy(
             einops.rearrange(out_logits, "... seq vocab -> (... seq) vocab"),
@@ -137,34 +156,38 @@ def main(args: argparse.Namespace):
         for group in optimizer.param_groups:
             group["lr"] = lr
 
-        logger.info(f"[it={it}] Backwarding")
+        # logger.info(f"[it={it}] Backwarding")
         optimizer.zero_grad()
         loss.backward()
-        logger.info(f"[it={it}] Backwarded")
+        # logger.info(f"[it={it}] Backwarded")
 
-        gradient_clipping(model.parameters(), args.max_l2_norm)
+        l2_norm_before_grad_clip, grad_clip_scale = gradient_clipping(model.parameters(), args.max_l2_norm)
 
-        logger.info(f"[it={it}] Optimizing.")
+        # logger.info(f"[it={it}] Optimizing.")
         optimizer.step()
-        logger.info(f"[it={it}] Optimized")
+        # logger.info(f"[it={it}] Optimized")
 
         time_now = time.time()
 
         step_log = {
             "train/loss": loss.item(),
             "train/lr": lr,
+            "train/l2_norm_before_grad_clip": l2_norm_before_grad_clip.item(),
+            "train/grad_clip_scale": grad_clip_scale.item(),
             "time/elapsed_sec": time_now - train_start,
             "time/step_sec": time_now - step_start,
         }
         run.log(step_log, step=it)
         logger.info(f"[it={it}] {step_log}")
 
-        if it == args.iterations - 1 or it % 500 == 0:
+        # Checkpoint
+        if it == args.iterations - 1 or it % checkpoint_every == 0:
             path_state = f"{path_state_subfolder}/{it}.pth"
             save_checkpoint(model, optimizer, it, path_state)
             logger.info(f"[it={it}] Saved to {path_state}")
 
-        if it == args.iterations - 1 or it % 100 == 0:
+        # Periodic eval
+        if it in (start_it, args.iterations - 1) or it % eval_every == 0:
             model.eval()
             with torch.no_grad():
                 eval_out_logits = model(eval_in_indices)
@@ -180,68 +203,78 @@ def main(args: argparse.Namespace):
                 logger.info(f"[it={it}] Eval: {eval_log}")
                 run.log(eval_log, step=it)
 
+        # Peek generation
+        if it in (start_it, args.iterations - 1) or it % peek_every == 0:
+            peek_out_indices = decoding.decoding(peek_in_indices, model, args.context_length, eot_id)
+            for batch_idx in range(peek_in_indices.shape[0]):
+                in_text = tokenizer.decode(peek_in_indices[batch_idx])
+                out_text = tokenizer.decode(peek_out_indices[batch_idx])
+                peek_log = {
+                    "peek/in_text": in_text,
+                    "peek/out_text": out_text
+                }
+                logger.info(f"[it={it}] [Peek decoding {batch_idx}] {peek_log}")
+            run.log(peek_log, step=it)
+
     total_steps = args.iterations - start_it
     total_wall_sec = time.time() - train_start
 
     logger.info("Finished %d steps in %.1f sec (%.2f sec/step)",
                 total_steps, total_wall_sec, total_wall_sec / total_steps)
 
+    logger.info("Starting full eval")
+    eval_loss, eval_perplexity = _eval_full(
+        model, dataset_eval, total_eval_batches, eval_batch_size, eval_last_idx, args.context_length
+    )
+    logger.info(f"Finished full eval with eval_loss = {eval_loss}, eval_perplexity = {eval_perplexity}")
+
     run.summary["total_steps"] = total_steps
     run.summary["wall_clock_sec"] = total_wall_sec
     run.summary["sec_per_step"] = total_wall_sec / total_steps
+    run.summary["eval_loss"] = eval_loss
+    run.summary["eval_perplexity"] = eval_perplexity
 
     run.finish()
 
 
-def peek_decoding(args: argparse.Namespace):
-    model = TransformerLM(
-        args.vocab_size,
-        args.context_length,
-        args.d_model,
-        args.num_layers,
-        args.num_heads,
-        args.d_ff,
-        args.rope_theta,
-        args.device,
-        dtype=torch.float32
-    )
-
-    optimizer = AdamW(
-        model.parameters(),
-        0.0,
-        args.weight_decay,
-        (args.beta1, args.beta2),
-        args.eps
-    )
-
-    path_state_src = args.path_state_src if args.path_state_src else "data/out/20260707_133459/199.pth"
-    load_checkpoint(path_state_src, model, optimizer)
-
-    vocab_filepath="vocab_tinystories.json"
-    merges_filepath="merges_tinystories.txt"
-    special_tokens=["<|endoftext|>"]
-    tokenizer = Tokenizer.from_files(
-        vocab_filepath=vocab_filepath,
-        merges_filepath=merges_filepath,
-        special_tokens=special_tokens
-    )
-
-    dataset_train: npt.NDArray = np.load("data/tokens_tinystories_valid.npy", mmap_mode='r')
-    in_indices, tgt_indices = data_loading(dataset_train, 1, 100, "cpu")
-    in_indices, tgt_indices = in_indices.numpy(), tgt_indices.numpy()
-    out_indices = decoding.decoding(in_indices, model, args.context_length,
-        tokenizer.vocab2id[b"<|endoftext|>"])
-
-    logger.info("Peek decoding:\n")
-    for batch_idx in range(in_indices.shape[0]):
-        in_text = tokenizer.decode(in_indices[batch_idx])
-        tgt_text = tokenizer.decode(tgt_indices[batch_idx])
-        out_text = tokenizer.decode(out_indices[batch_idx])
-        logger.info(f"[{batch_idx}] in_text:\n{in_text}\nout_text:\n{out_text}\ntgt_text:\n{tgt_text}")
+def _eval_full(
+    model: TransformerLM, eval_dataset, total_eval_batches, eval_batch_size, eval_last_idx, context_length
+) -> tuple[float, float]:
+    model.eval()
+    device = next(model.parameters()).device
+    with torch.no_grad():
+        eval_total_loss = 0.0
+        eval_total_tokens = 0
+        for eval_bidx in range(total_eval_batches):
+            eval_start_idx = eval_bidx * eval_batch_size
+            eval_end_idx = (
+                eval_last_idx if eval_bidx == total_eval_batches - 1
+                else (eval_bidx + 1) * eval_batch_size
+            )
+            eval_in_indices, eval_tgt_indices = data_loading_by_starts(
+                eval_dataset,
+                torch.arange(eval_start_idx, eval_end_idx).reshape(-1, 1),
+                context_length,
+                device
+            )
+            eval_out_logits = model(eval_in_indices)
+            eval_step_loss = cross_entropy(
+                einops.rearrange(eval_out_logits, "... seq vocab -> (... seq) vocab"),
+                einops.rearrange(eval_tgt_indices, "... seq -> (... seq)")
+            )
+            eval_total_loss += eval_step_loss.item() * eval_tgt_indices.numel()
+            eval_total_tokens += eval_tgt_indices.numel()
+        eval_loss = eval_total_loss / eval_total_tokens
+        eval_perplexity = math.exp(eval_loss)
+    return (eval_loss, eval_perplexity)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(funcName)s:%(lineno)d %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
     seed = 100000
     np.random.seed(seed)
@@ -254,4 +287,3 @@ if __name__ == "__main__":
         logger.info("\t%s: %s", k, v)
 
     main(args)
-    # peek_decoding(args)

@@ -11,7 +11,6 @@ from torch import Tensor
 
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 def softmax(x: Float[Tensor, "..."], dim: int) -> Float[Tensor, " ..."]:
     exp = torch.exp(x - torch.max(x, dim=dim, keepdim=True)[0])
@@ -55,23 +54,29 @@ def learning_rate_schedule(
     else:
         return min_learning_rate
 
-def gradient_clipping(params_itr: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+def gradient_clipping(params_itr: Iterable[torch.nn.Parameter], max_l2_norm: float) -> tuple[torch.Tensor, torch.Tensor]:
     params = [p for p in params_itr if p.grad is not None]
     if not params:
-        return
+        return (torch.tensor(0.0), torch.tensor(1.0))
     square_sum = sum(p.grad.pow(2).sum() for p in params)
     l2_norm = square_sum.sqrt()
-    if l2_norm < max_l2_norm:
-        return
-    scale = max_l2_norm / (l2_norm + 1e-6)
-    for param in params:
-        param.grad.mul_(scale)
+    scale = l2_norm.new_tensor(1.0)
+    if l2_norm >= max_l2_norm:
+        scale = max_l2_norm / (l2_norm + 1e-6)
+        for param in params:
+            param.grad.mul_(scale)
+    return (l2_norm, scale)
 
 def data_loading(
     dataset: npt.NDArray, batch_size: int, context_length: int, device: str
-) -> tuple[torch.Tensor, torch.Tensor]:
-    starts = np.random.randint(0, len(dataset) - context_length, size=batch_size).reshape(-1, 1)
-    offsets = np.arange(context_length)
+) -> tuple[Int[Tensor, "batch seq"], Int[Tensor, "batch seq"]]:
+    starts = torch.randint(0, len(dataset) - context_length, size=(batch_size, 1))
+    return data_loading_by_starts(dataset, starts, context_length, device)
+
+def data_loading_by_starts(
+    dataset: npt.NDArray, starts: torch.Tensor, context_length: int, device: str
+) -> tuple[Int[Tensor, "batch seq"], Int[Tensor, "batch seq"]]:
+    offsets = torch.arange(context_length)
     return (
         torch.tensor(dataset[starts + offsets], dtype=torch.long).to(device),
         torch.tensor(dataset[starts + offsets + 1], dtype=torch.long).to(device)

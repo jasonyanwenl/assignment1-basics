@@ -40,4 +40,4 @@ def decoding(
 
             finished |= (next_tokens == eot_token_id).squeeze(-1)
             batch_outputs = torch.cat((batch_outputs, next_tokens), dim=-1)
-    return batch_outputs.numpy()
+    return batch_outputs.cpu().numpy()

@@ -128,8 +128,6 @@ class Tokenizer:
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-
     # vocab_filepath="vocab_tinystories.json"
     # merges_filepath="merges_tinystories.txt"
 
