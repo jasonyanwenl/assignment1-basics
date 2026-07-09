@@ -178,7 +178,7 @@ def main(args: argparse.Namespace):
             "time/step_sec": time_now - step_start,
         }
         run.log(step_log, step=it)
-        logger.info(f"[it={it}] {step_log}")
+        # logger.info(f"[it={it}] {step_log}")
 
         # Checkpoint
         if it == args.iterations - 1 or it % checkpoint_every == 0:
