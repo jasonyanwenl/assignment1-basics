@@ -14,7 +14,8 @@ class SwiGLU(nn.Module):
         self.w3 = Linear(d_model, d_ff_rounded, dtype=dtype, device=device)
 
     def forward(self, x: Float[torch.Tensor, "... seq d_model"]) -> Float[torch.Tensor, "... seq d_model"]:
-        return self.w2((self._silu(self.w1(x)) * (self.w3(x))))
+        return self.w2((self.silu(self.w1(x)) * (self.w3(x))))
 
-    def _silu(self, x: torch.Tensor) -> torch.Tensor:
+    @classmethod
+    def silu(self, x: torch.Tensor) -> torch.Tensor:
         return x * torch.sigmoid(x)
