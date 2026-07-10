@@ -43,11 +43,11 @@ class TransformerLM(nn.Module):
             device=device,
             dtype=dtype
         ) for _ in range(num_layers)])
-        self.ln_final = RMSNorm(d_model=d_model, device=device, dtype=dtype)
+        # self.ln_final = RMSNorm(d_model=d_model, device=device, dtype=dtype)
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype)
 
     def forward(self, in_indices: Int[Tensor, "... seq"]) -> Float[torch.Tensor, "... seq vocab_size"]:
         hidden = self.token_embeddings(in_indices)
         for layer in self.layers:
             hidden = layer(hidden, self.rope)
-        return self.lm_head(self.ln_final(hidden))
+        return self.lm_head(hidden)
