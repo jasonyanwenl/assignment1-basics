@@ -36,7 +36,7 @@ class MultiHeadSelfAttention(nn.Module):
         Q = einops.rearrange(self.q_proj(in_features), "... seq (head d_k) -> ... head seq d_k", head=self.num_heads)
         K = einops.rearrange(self.k_proj(in_features), "... seq (head d_k) -> ... head seq d_k", head=self.num_heads)
         V = einops.rearrange(self.v_proj(in_features), "... seq (head d_v) -> ... head seq d_v", head=self.num_heads)
-        if token_positions is not None:
+        if rope is not None and token_positions is not None:
             Q = rope(Q, token_positions)
             K = rope(K, token_positions)
         attention = scaled_dot_product_attention(Q, K, V, mask)
