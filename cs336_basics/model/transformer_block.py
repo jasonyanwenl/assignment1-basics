@@ -26,5 +26,5 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x: Float[Tensor, "... seq d_model"], rope: RoPE | None=None) -> Float[Tensor, "... seq d_model"]:
         token_positions = torch.arange(x.shape[-2], device=x.device, dtype=torch.long)
-        hidden = x + self.attn(self.ln1(x), rope, token_positions)
-        return hidden + self.ffn(self.ln2(hidden))
+        hidden = self.ln1(x + self.attn(x, rope, token_positions))
+        return self.ln2(hidden + self.ffn(hidden))
