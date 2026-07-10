@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cosine-cycle-iters", type=int, default=6)
     parser.add_argument("--eps", type=float, default=1e-8)
     parser.add_argument("--iterations", type=int, default=10)
-    parser.add_argument("--max-l2-norm", type=float, default=1e-2)
+    parser.add_argument("--max-l2-norm", type=float, default=1.0)
     parser.add_argument("--max-lr", type=float, default=1e-2)
     parser.add_argument("--min-lr", type=float, default=1e-4)
     parser.add_argument("--warmup-iters", type=int, default=3)
@@ -225,7 +225,7 @@ def main(args: argparse.Namespace):
     logger.info("Finished %d steps in %.1f sec (%.2f sec/step)",
                 total_steps, total_wall_sec, total_wall_sec / total_steps)
 
-    logger.info("Starting full eval")
+    logger.info(f"Starting full eval with {total_eval_batches} batches, with each has the batch size {eval_batch_size}")
     eval_loss, eval_perplexity = _eval_full(
         model, dataset_eval, total_eval_batches, eval_batch_size, eval_last_idx, args.context_length
     )
@@ -234,8 +234,10 @@ def main(args: argparse.Namespace):
     run.summary["total_steps"] = total_steps
     run.summary["wall_clock_sec"] = total_wall_sec
     run.summary["sec_per_step"] = total_wall_sec / total_steps
-    run.summary["eval_loss"] = eval_loss
-    run.summary["eval_perplexity"] = eval_perplexity
+    run.summary["full_eval_loss"] = eval_loss
+    run.summary["full_eval_perplexity"] = eval_perplexity
+    run.summary["full_eval_total_batches"] = total_eval_batches
+    run.summary["full_eval_batch_size"] = eval_batch_size
 
     run.finish()
 
@@ -248,7 +250,8 @@ def _eval_full(
     with torch.no_grad():
         eval_total_loss = 0.0
         eval_total_tokens = 0
-        for eval_bidx in range(total_eval_batches):
+        pbar = tqdm(range(total_eval_batches), desc="full_eval")
+        for eval_bidx in pbar:
             eval_start_idx = eval_bidx * eval_batch_size
             eval_end_idx = (
                 eval_last_idx if eval_bidx == total_eval_batches - 1
@@ -267,6 +270,7 @@ def _eval_full(
             )
             eval_total_loss += eval_step_loss.item() * eval_tgt_indices.numel()
             eval_total_tokens += eval_tgt_indices.numel()
+            pbar.set_postfix(loss=f"{eval_total_loss / eval_total_tokens:.3f}")
         eval_loss = eval_total_loss / eval_total_tokens
         eval_perplexity = math.exp(eval_loss)
     return (eval_loss, eval_perplexity)
