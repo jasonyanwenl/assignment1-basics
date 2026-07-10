@@ -49,5 +49,5 @@ class TransformerLM(nn.Module):
     def forward(self, in_indices: Int[Tensor, "... seq"]) -> Float[torch.Tensor, "... seq vocab_size"]:
         hidden = self.token_embeddings(in_indices)
         for layer in self.layers:
-            hidden = layer(hidden, self.rope)
+            hidden = layer(hidden, rope=None)
         return self.lm_head(self.ln_final(hidden))
