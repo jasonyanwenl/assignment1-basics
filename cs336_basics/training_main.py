@@ -93,6 +93,10 @@ def main(args: argparse.Namespace):
         args.eps
     )
 
+    total_params = sum(p.numel() for p in model.parameters())
+    run.summary["total_params"] = total_params
+    logger.info(f"Model total params = {total_params}")
+
     start_it = 0
     if args.path_state_src:
         start_it = load_checkpoint(args.path_state_src, model, optimizer) + 1
