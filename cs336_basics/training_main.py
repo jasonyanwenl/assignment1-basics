@@ -6,6 +6,7 @@ import os
 import time
 import einops
 import torch
+from tqdm import tqdm
 import wandb
 from cs336_basics import decoding
 from cs336_basics.adamw import AdamW
@@ -124,8 +125,8 @@ def main(args: argparse.Namespace):
     logger.info("Loaded tokenizer")
 
     train_start = time.time()
-
-    for it in range(start_it, args.iterations):
+    pbar = tqdm(range(start_it, args.iterations), desc="train", initial=start_it, total=args.iterations)
+    for it in pbar:
         step_start = time.time()
         # logger.info(f"[it={it}] Batch sampling")
         in_indices, tgt_indices = data_loading(
@@ -180,11 +181,13 @@ def main(args: argparse.Namespace):
         run.log(step_log, step=it)
         # logger.info(f"[it={it}] {step_log}")
 
+        pbar.set_postfix(loss=f"{loss.item():.3f}", lr=f"{lr:.2e}")
+
         # Checkpoint
         if it == args.iterations - 1 or it % checkpoint_every == 0:
             path_state = f"{path_state_subfolder}/{it}.pth"
             save_checkpoint(model, optimizer, it, path_state)
-            logger.info(f"[it={it}] Saved to {path_state}")
+            tqdm.write(f"[it={it}] Checkpointed to {path_state}")
 
         # Periodic eval
         if it in (start_it, args.iterations - 1) or it % eval_every == 0:
@@ -200,7 +203,7 @@ def main(args: argparse.Namespace):
                     "eval/loss": eval_loss.item(),
                     "eval/perplexity": eval_perplexity.item(),
                 }
-                logger.info(f"[it={it}] Eval: {eval_log}")
+                tqdm.write(f"[it={it}] Eval: {eval_log}")
                 run.log(eval_log, step=it)
 
         # Peek generation
@@ -213,7 +216,7 @@ def main(args: argparse.Namespace):
                     "peek/in_text": in_text,
                     "peek/out_text": out_text
                 }
-                logger.info(f"[it={it}] [Peek decoding {batch_idx}] {peek_log}")
+                tqdm.write(f"[it={it}] [Peek decoding {batch_idx}] {peek_log}")
             run.log(peek_log, step=it)
 
     total_steps = args.iterations - start_it

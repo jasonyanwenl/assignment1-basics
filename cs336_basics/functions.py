@@ -88,14 +88,12 @@ def save_checkpoint(
     iteration: int,
     out: str | os.PathLike | BinaryIO | IO[bytes]
 ):
-    logger.info(f"Saving checkpoint to: {out}")
     obj = {
         "model": model.state_dict(),
         "optimizer": optimizer.state_dict(),
         "iteration": iteration,
     }
     torch.save(obj, out)
-    logger.info(f"Saved checkpoint to: {out}")
 
 def load_checkpoint(
     src: str | os.PathLike | BinaryIO | IO[bytes],
