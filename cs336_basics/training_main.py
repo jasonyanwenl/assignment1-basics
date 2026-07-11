@@ -229,20 +229,20 @@ def main(args: argparse.Namespace):
     logger.info("Finished %d steps in %.1f sec (%.2f sec/step)",
                 total_steps, total_wall_sec, total_wall_sec / total_steps)
 
+    run.summary["total_steps"] = total_steps
+    run.summary["wall_clock_sec"] = total_wall_sec
+    run.summary["sec_per_step"] = total_wall_sec / total_steps
+    run.summary["full_eval_total_batches"] = total_eval_batches
+    run.summary["full_eval_batch_size"] = eval_batch_size
+
     logger.info(f"Starting full eval with {total_eval_batches} batches, with each has the batch size {eval_batch_size}")
     eval_loss, eval_perplexity = _eval_full(
         model, dataset_eval, total_eval_batches, eval_batch_size, eval_last_idx, args.context_length
     )
     logger.info(f"Finished full eval with eval_loss = {eval_loss}, eval_perplexity = {eval_perplexity}")
 
-    run.summary["total_steps"] = total_steps
-    run.summary["wall_clock_sec"] = total_wall_sec
-    run.summary["sec_per_step"] = total_wall_sec / total_steps
     run.summary["full_eval_loss"] = eval_loss
     run.summary["full_eval_perplexity"] = eval_perplexity
-    run.summary["full_eval_total_batches"] = total_eval_batches
-    run.summary["full_eval_batch_size"] = eval_batch_size
-
     run.finish()
 
 
